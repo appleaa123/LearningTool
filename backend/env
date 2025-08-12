@@ -1,0 +1,29 @@
+# Backend/ODR environment configuration
+
+# Use keys passed in via LangGraph request config when true
+GET_API_KEYS_FROM_CONFIG=true
+
+# OpenAI or OpenRouter (OpenAI-compatible)
+OPENAI_API_KEY=
+# To use OpenRouter with openai:* models
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+
+# Anthropic
+ANTHROPIC_API_KEY=
+
+# Google / Gemini
+GOOGLE_API_KEY=
+
+# Tavily search (recommended)
+TAVILY_API_KEY=
+
+# Optional other providers
+GROQ_API_KEY=
+DEEPSEEK_API_KEY=
+
+# Optional: LangSmith/Tracing
+LANGCHAIN_TRACING_V2=false
+LANGCHAIN_API_KEY=
+LANGCHAIN_PROJECT=deep-research
+
+

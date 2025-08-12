@@ -1,0 +1,13 @@
+{
+  "dependencies": [
+    ".",
+    "./vendor/open_deep_research"
+  ],
+  "graphs": {
+    "agent": "./vendor/open_deep_research/src/open_deep_research/deep_researcher.py:deep_researcher"
+  },
+  "http": {
+    "app": "./src/agent/app.py:app"
+  },
+  "env": "env"
+}
