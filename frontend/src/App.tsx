@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { MediaUploader } from "@/components/MediaUploader";
 import { AudioRecorder } from "@/components/AudioRecorder";
 import { DocumentUploader } from "@/components/DocumentUploader";
+import { NotebookSelector } from "@/components/NotebookSelector";
 
 export default function App() {
   const [processedEventsTimeline, setProcessedEventsTimeline] = useState<
@@ -23,6 +24,7 @@ export default function App() {
   const [isKnowledgeDrawerOpen, setIsKnowledgeDrawerOpen] = useState(false);
   const [lastIngestIds, setLastIngestIds] = useState<string[] | null>(null);
   const [availableProviders, setAvailableProviders] = useState<{ openai?: boolean; gemini?: boolean }>({});
+  const [notebookId, setNotebookId] = useState<number | null>(null);
   const thread = useStream<{
     messages: Message[];
     initial_search_query_count: number;
@@ -170,7 +172,8 @@ export default function App() {
   return (
     <div className="flex h-screen bg-neutral-800 text-neutral-100 font-sans antialiased">
       <main className="h-full w-full max-w-4xl mx-auto">
-          <div className="p-2 flex justify-end">
+          <div className="p-2 flex justify-between items-center gap-2">
+            <NotebookSelector onChange={setNotebookId} />
             <Button variant="secondary" onClick={() => setIsKnowledgeDrawerOpen(true)}>
               Add to Knowledge
             </Button>
@@ -224,6 +227,7 @@ export default function App() {
                 <p className="text-sm text-neutral-300 mb-2">Photo upload</p>
                 <MediaUploader
                   providers={availableProviders}
+                  notebookId={notebookId ?? undefined}
                   onSuccess={(ids) => setLastIngestIds(ids)}
                   onError={(msg) => console.warn(msg)}
                 />
@@ -232,6 +236,7 @@ export default function App() {
                 <p className="text-sm text-neutral-300 mb-2">Voice input</p>
                 <AudioRecorder
                   providers={availableProviders}
+                  notebookId={notebookId ?? undefined}
                   onSuccess={(ids) => setLastIngestIds(ids)}
                   onError={(msg) => console.warn(msg)}
                 />
@@ -239,6 +244,7 @@ export default function App() {
               <Card className="p-3 bg-neutral-900 border-neutral-700">
                 <p className="text-sm text-neutral-300 mb-2">Document upload</p>
                 <DocumentUploader
+                  notebookId={notebookId ?? undefined}
                   onSuccess={(ids) => setLastIngestIds(ids)}
                   onError={(msg) => console.warn(msg)}
                 />

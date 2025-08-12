@@ -19,6 +19,13 @@ except Exception:
 
 app = FastAPI()
 
+# Initialize DB schema on startup/import
+try:
+    from services.db import init_db  # type: ignore
+    init_db()
+except Exception as exc:
+    print(f"WARN: Failed to initialize DB: {exc}")
+
 
 def create_frontend_router(build_dir="../frontend/dist"):
     """Creates a router to serve the React frontend.
@@ -62,10 +69,12 @@ try:
     from ingestion.router import router as ingest_router
     from routers.assistant import router as assistant_router
     from routers.knowledge import router as knowledge_router
+    from routers.notebooks import router as notebooks_router
 
     app.include_router(ingest_router)
     app.include_router(assistant_router)
     app.include_router(knowledge_router)
+    app.include_router(notebooks_router)
     
     # Simple configuration probe for frontend: which providers are enabled by env
     @app.get("/config/providers")

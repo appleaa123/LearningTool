@@ -23,8 +23,11 @@ dependencies = [
     "unstructured>=0.15.0",
     "pytesseract>=0.3.13",
     "pillow>=10.3.0",
+    "faster-whisper>=1.0.3",
     "python-multipart>=0.0.9",
     "tavily-python>=0.4.0",
+    "sqlmodel>=0.0.21",
+    "sqlalchemy>=2.0.23",
 ]
 
 

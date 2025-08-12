@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 
 type DocumentUploaderProps = {
   userId?: string;
+  notebookId?: number;
   onSuccess?: (ids: string[]) => void;
   onError?: (message: string) => void;
 };
@@ -13,6 +14,7 @@ type DocumentUploaderProps = {
  */
 export function DocumentUploader({
   userId = "anon",
+  notebookId,
   onSuccess,
   onError,
 }: DocumentUploaderProps) {
@@ -31,6 +33,7 @@ export function DocumentUploader({
       const form = new FormData();
       form.append("file", file);
       form.append("user_id", userId);
+      if (notebookId != null) form.append("notebook_id", String(notebookId));
       const res = await fetch(`${apiBase}/ingest/document`, {
         method: "POST",
         body: form,

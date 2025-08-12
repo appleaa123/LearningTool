@@ -1,3 +1,7 @@
-from agent.graph import graph
+"""Agent package initializer.
 
-__all__ = ["graph"]
+Avoid importing heavy graph dependencies at package import time to prevent
+environment issues before `.env` is loaded by `agent.app`.
+"""
+
+__all__ = []

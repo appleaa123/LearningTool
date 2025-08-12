@@ -24,7 +24,8 @@ def get_chat_model(provider: Provider, model: str, temperature: float = 0.2) -> 
         ValueError: If the provider is not supported or the required API key is missing.
     """
     if provider == "gemini":
-        api_key = os.getenv("GEMINI_API_KEY")
+        # Accept either GEMINI_API_KEY or GOOGLE_API_KEY for compatibility
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not api_key:
             raise ValueError("GEMINI_API_KEY is not set")
         return ChatGoogleGenerativeAI(model=model, temperature=temperature, api_key=api_key)

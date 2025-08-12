@@ -7,6 +7,7 @@ type ProviderFlags = { openai?: boolean; gemini?: boolean };
 type AudioRecorderProps = {
   userId?: string;
   providers?: ProviderFlags; // Backend availability for enabling options
+  notebookId?: number;
   onSuccess?: (ids: string[]) => void;
   onError?: (message: string) => void;
 };
@@ -15,7 +16,7 @@ type AudioRecorderProps = {
  * Simple audio recorder using MediaRecorder that posts audio/webm to /ingest/audio.
  * Includes an ASR provider toggle to select Whisper (default) or Gemini (server-side not yet active).
  */
-export function AudioRecorder({ userId = "anon", providers, onSuccess, onError }: AudioRecorderProps) {
+export function AudioRecorder({ userId = "anon", providers, notebookId, onSuccess, onError }: AudioRecorderProps) {
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [chunks, setChunks] = useState<Blob[]>([]);
   const [isRecording, setIsRecording] = useState(false);
@@ -72,6 +73,7 @@ export function AudioRecorder({ userId = "anon", providers, onSuccess, onError }
       form.append("file", file);
       form.append("user_id", userId);
       form.append("asr_provider", provider);
+      if (notebookId != null) form.append("notebook_id", String(notebookId));
       const res = await fetch(`${apiBase}/ingest/audio`, { method: "POST", body: form });
       if (!res.ok) {
         const text = await res.text();

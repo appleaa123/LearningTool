@@ -48,7 +48,9 @@ services:
       REDIS_URI: redis://langgraph-redis:6379
       POSTGRES_URI: postgres://postgres:postgres@langgraph-postgres:5432/postgres?sslmode=disable
       LIGHTRAG_BASE_DIR: /data/lightrag
+      SQLITE_DB_PATH: /data/app.db
     volumes:
       - ./backend:/app/backend
       - ./frontend:/app/frontend
       - lightrag-data:/data/lightrag
+      - lightrag-data:/data

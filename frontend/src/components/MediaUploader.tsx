@@ -7,6 +7,7 @@ type ProviderFlags = { openai?: boolean; gemini?: boolean };
 type MediaUploaderProps = {
   userId?: string;
   providers?: ProviderFlags; // Available backend providers for optional toggles
+  notebookId?: number;
   onSuccess?: (ids: string[]) => void;
   onError?: (message: string) => void;
 };
@@ -15,7 +16,7 @@ type MediaUploaderProps = {
  * Photo/image uploader that posts to /ingest/image and returns inserted IDs.
  * Accepts image/* and prefers the rear camera on mobile via capture="environment".
  */
-export function MediaUploader({ userId = "anon", providers, onSuccess, onError }: MediaUploaderProps) {
+export function MediaUploader({ userId = "anon", providers, notebookId, onSuccess, onError }: MediaUploaderProps) {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +35,7 @@ export function MediaUploader({ userId = "anon", providers, onSuccess, onError }
       const form = new FormData();
       form.append("file", file);
       form.append("user_id", userId);
+      if (notebookId != null) form.append("notebook_id", String(notebookId));
       // Include selected vision processor so server can route (ocr | gemini)
       form.append("vision_provider", visionProvider);
       const res = await fetch(`${apiBase}/ingest/image`, {

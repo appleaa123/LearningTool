@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import base64
 import mimetypes
@@ -37,12 +38,28 @@ def extract_text_from_document(file_path: str) -> List[KnowledgeChunk]:
     return chunks
 
 
+def redact_pii(text: str) -> str:
+    """Lightweight regex-based PII redaction.
+
+    Redacts emails, phone numbers, and US SSNs. Controlled by INGESTION_REDACT_PII.
+    """
+    if not os.getenv("INGESTION_REDACT_PII", "false").lower() in {"1", "true", "yes"}:
+        return text
+    redacted = text
+    # Emails
+    redacted = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[REDACTED_EMAIL]", redacted)
+    # Phone numbers (very loose)
+    redacted = re.sub(r"(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]?\d{4}", "[REDACTED_PHONE]", redacted)
+    # SSN (US)
+    redacted = re.sub(r"\b\d{3}-\d{2}-\d{4}\b", "[REDACTED_SSN]", redacted)
+    return redacted
+
+
 def extract_text_from_image(file_path: str, provider: str | None = None) -> List[KnowledgeChunk]:
     """Extract text from image using either OCR or Gemini Vision (if configured).
 
-    Args:
-        file_path: Image path to process.
-        provider: Optional override processor: "ocr" or "gemini".
+    - provider="ocr": uses Pillow + pytesseract
+    - provider="gemini": uses Gemini Vision through google-genai
     """
     selected = (provider or os.getenv("INGEST_IMAGE_PROCESSOR", "ocr")).lower()
     if selected == "gemini":
@@ -56,7 +73,7 @@ def extract_text_from_image(file_path: str, provider: str | None = None) -> List
         except Exception as exc:  # pragma: no cover
             raise RuntimeError("google-genai and pillow are required for Gemini vision.") from exc
         img = Image.open(file_path)
-        # Convert to base64-encoded WebP or PNG
+        # Convert to base64-encoded PNG
         import io
         buf = io.BytesIO()
         img.save(buf, format="PNG")
@@ -68,19 +85,20 @@ def extract_text_from_image(file_path: str, provider: str | None = None) -> List
                 {
                     "role": "user",
                     "parts": [
-                        {"text": "Extract any readable text from this image."},
+                        {"text": "Extract any readable text from this image. Reply with plain text only."},
                         {"inline_data": {"mime_type": "image/png", "data": encoded}},
                     ],
                 }
             ],
         )
-        text = getattr(response, "text", None) or ""
+        text = (getattr(response, "text", None) or "").strip()
+        text = redact_pii(text)
         return [
             KnowledgeChunk(
-                text=text.strip(),
+                text=text,
                 source_type="image",
                 source_uri=file_path,
-                metadata={"vision_provider": "gemini", "model": model_id},
+                metadata={"source_type": "image", "source_uri": file_path, "provider": "gemini", "model": model_id},
             )
         ]
 
@@ -89,35 +107,41 @@ def extract_text_from_image(file_path: str, provider: str | None = None) -> List
         from PIL import Image  # lazy import
         import pytesseract
     except Exception as exc:  # pragma: no cover
-        raise RuntimeError(
-            "`pillow` and `pytesseract` are required for image OCR."
-        ) from exc
+        raise RuntimeError("`pillow` and `pytesseract` are required for image OCR.") from exc
 
     img = Image.open(file_path)
-    text = pytesseract.image_to_string(img)
-    return [
-        KnowledgeChunk(
-            text=text.strip(),
-            source_type="image",
-            source_uri=file_path,
-            metadata={"vision_provider": "ocr"},
+    full_text = pytesseract.image_to_string(img)
+    full_text = redact_pii(full_text.strip())
+    # Simple paragraph chunking by blank lines
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n+", full_text) if p.strip()]
+    chunks: List[KnowledgeChunk] = []
+    for para in paragraphs:
+        chunks.append(
+            KnowledgeChunk(
+                text=para,
+                source_type="image",
+                source_uri=file_path,
+                metadata={"source_type": "image", "source_uri": file_path, "provider": "ocr"},
+            )
         )
-    ]
+    if not chunks:
+        # Fallback to a single chunk if paragraph split yields nothing
+        chunks.append(
+            KnowledgeChunk(
+                text=full_text,
+                source_type="image",
+                source_uri=file_path,
+                metadata={"source_type": "image", "source_uri": file_path, "provider": "ocr"},
+            )
+        )
+    return chunks
 
 
 def transcribe_audio_to_text(file_path: str, provider: str = "whisper") -> List[KnowledgeChunk]:
-    """Transcribe audio into text and return a single `KnowledgeChunk`.
+    """Transcribe audio into text. Supports whisper CLI, OpenAI, and Gemini.
 
-    This currently supports the Whisper CLI path for determinism. The `provider`
-    parameter is accepted for forward compatibility (e.g., "whisper", "gemini"),
-    but non-whisper providers are not yet implemented here.
-
-    Args:
-        file_path: Path to the uploaded audio file to transcribe.
-        provider: Requested ASR provider. Supported: "whisper" (default). Others raise.
-
-    Returns:
-        A list with one `KnowledgeChunk` containing the transcribed text.
+    Returns a list of one or more chunks. For API-based providers we return a
+    single chunk; CLI could be extended to segment-level chunks later.
     """
     normalized_provider = (provider or "whisper").lower()
 
@@ -135,14 +159,13 @@ def transcribe_audio_to_text(file_path: str, provider: str = "whisper") -> List[
         except Exception as exc:  # pragma: no cover
             raise RuntimeError("google-genai package is required for Gemini ASR.") from exc
         client = Client(api_key=api_key)
-        # Ask Gemini to transcribe the audio
         response = client.models.generate_content(
             model=model_id,
             contents=[
                 {
                     "role": "user",
                     "parts": [
-                        {"text": "Transcribe the following audio to text."},
+                        {"text": "Transcribe the following audio to text. Reply with plain text only."},
                         {
                             "inline_data": {
                                 "mime_type": mime_type,
@@ -153,15 +176,14 @@ def transcribe_audio_to_text(file_path: str, provider: str = "whisper") -> List[
                 }
             ],
         )
-        text = getattr(response, "text", None)
-        if not text:
-            raise RuntimeError("Gemini ASR did not return text content.")
+        text = (getattr(response, "text", None) or "").strip()
+        text = redact_pii(text)
         return [
             KnowledgeChunk(
-                text=text.strip(),
+                text=text,
                 source_type="audio",
                 source_uri=file_path,
-                metadata={"asr_provider": "gemini", "model": model_id},
+                metadata={"source_type": "audio", "source_uri": file_path, "asr_provider": "gemini", "model": model_id},
             )
         ]
 
@@ -169,7 +191,6 @@ def transcribe_audio_to_text(file_path: str, provider: str = "whisper") -> List[
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY is not set for OpenAI transcription.")
-        # Prefer GPT-4o Transcribe if available; fallback to whisper-1
         model = os.getenv("OPENAI_ASR_MODEL", "gpt-4o-transcribe")
         try:
             import requests  # lazy import
@@ -189,29 +210,63 @@ def transcribe_audio_to_text(file_path: str, provider: str = "whisper") -> List[
         if resp.status_code >= 300:
             raise RuntimeError(f"OpenAI transcription failed: {resp.status_code} {resp.text}")
         text = (resp.json() or {}).get("text", "").strip()
+        text = redact_pii(text)
         return [
             KnowledgeChunk(
                 text=text,
                 source_type="audio",
                 source_uri=file_path,
-                metadata={"asr_provider": "openai", "model": model},
+                metadata={"source_type": "audio", "source_uri": file_path, "asr_provider": "openai", "model": model},
             )
         ]
 
-    # Default to Whisper CLI transcription
+    # Prefer faster-whisper if available; else fall back to Whisper CLI
+    try:
+        from faster_whisper import WhisperModel  # type: ignore
+
+        model_size = os.getenv("FASTER_WHISPER_MODEL", "medium")
+        device = os.getenv("FASTER_WHISPER_DEVICE", "cpu")
+        compute_type = os.getenv("FASTER_WHISPER_COMPUTE", "int8")
+        model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        segments, _info = model.transcribe(file_path, language=os.getenv("WHISPER_LANG", "en"))
+        chunks: List[KnowledgeChunk] = []
+        for seg in segments:
+            seg_text = redact_pii(seg.text.strip())
+            if not seg_text:
+                continue
+            chunks.append(
+                KnowledgeChunk(
+                    text=seg_text,
+                    source_type="audio",
+                    source_uri=file_path,
+                    metadata={
+                        "source_type": "audio",
+                        "source_uri": file_path,
+                        "asr_provider": "whisper-faster",
+                        "start": float(getattr(seg, "start", 0.0)),
+                        "end": float(getattr(seg, "end", 0.0)),
+                    },
+                )
+            )
+        if chunks:
+            return chunks
+        # If faster-whisper yielded no chunks, fall through to CLI
+    except Exception:
+        pass
+
+    # Whisper CLI fallback
     output_dir = os.getenv("WHISPER_TMP", "/tmp")
     base = os.path.splitext(os.path.basename(file_path))[0]
     txt_path = os.path.join(output_dir, f"{base}.txt")
-
     try:
         subprocess.run(
             [
                 "whisper",
                 file_path,
                 "--language",
-                "en",
+                os.getenv("WHISPER_LANG", "en"),
                 "--model",
-                "large-v3",
+                os.getenv("WHISPER_MODEL", "large-v3"),
                 "--output_format",
                 "txt",
                 "--output_dir",
@@ -221,22 +276,18 @@ def transcribe_audio_to_text(file_path: str, provider: str = "whisper") -> List[
             capture_output=True,
         )
     except FileNotFoundError as exc:  # pragma: no cover
-        raise RuntimeError(
-            "`whisper` CLI not found. Install openai-whisper or switch to API-based ASR."
-        ) from exc
-
+        raise RuntimeError("`whisper` CLI not found. Install openai-whisper or switch to API-based ASR.") from exc
     if not os.path.exists(txt_path):
         raise RuntimeError("Whisper did not produce a transcript file.")
-
     with open(txt_path, "r", encoding="utf-8") as f:
         text = f.read().strip()
-
+    text = redact_pii(text)
     return [
         KnowledgeChunk(
             text=text,
             source_type="audio",
             source_uri=file_path,
-            metadata={"asr_provider": normalized_provider},
+            metadata={"source_type": "audio", "source_uri": file_path, "asr_provider": normalized_provider},
         )
     ]
 
