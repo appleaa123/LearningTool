@@ -1,0 +1,13 @@
+Sample Document for Testing
+
+This is a test document used for end-to-end testing of the document ingestion system.
+
+Key Topics:
+- Machine Learning
+- Artificial Intelligence
+- Natural Language Processing
+- Knowledge Graphs
+
+This document contains enough content to test the parsing and chunking functionality of the ingestion pipeline.
+
+The system should be able to extract meaningful information from this text and store it in the knowledge base for later retrieval and research.
