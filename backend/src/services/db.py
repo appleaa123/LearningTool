@@ -40,7 +40,7 @@ ENGINE = create_engine(f"sqlite:///{_database_path()}", echo=False)
 def init_db() -> None:
     """Create all tables if they do not already exist."""
     # Late import to avoid circular deps
-    from services.models import BaseModel
+    from src.services.models import BaseModel
 
     SQLModel.metadata.create_all(ENGINE)  # type: ignore[arg-type]
 

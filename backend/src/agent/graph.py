@@ -1,6 +1,6 @@
 import os
 
-from agent.tools_and_schemas import SearchQueryList, Reflection
+from src.agent.tools_and_schemas import SearchQueryList, Reflection
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage
 from langgraph.types import Send
@@ -9,14 +9,14 @@ from langgraph.graph import START, END
 from langchain_core.runnables import RunnableConfig
 from google.genai import Client
 
-from agent.state import (
+from src.agent.state import (
     OverallState,
     QueryGenerationState,
     ReflectionState,
     WebSearchState,
 )
-from agent.configuration import Configuration
-from agent.prompts import (
+from src.agent.configuration import Configuration
+from src.agent.prompts import (
     get_current_date,
     query_writer_instructions,
     web_searcher_instructions,
@@ -24,8 +24,8 @@ from agent.prompts import (
     answer_instructions,
 )
 from langchain_google_genai import ChatGoogleGenerativeAI
-from services.llm_provider import get_chat_model
-from agent.utils import (
+from src.services.llm_provider import get_chat_model
+from src.agent.utils import (
     get_citations,
     get_research_topic,
     insert_citation_markers,
@@ -34,8 +34,14 @@ from agent.utils import (
 
 load_dotenv()
 
-# Used for Google Search API
-genai_client = Client(api_key=os.getenv("GEMINI_API_KEY"))
+# Used for Google Search API - initialize lazily to avoid startup errors
+genai_client = None
+try:
+    api_key = os.getenv("GEMINI_API_KEY")
+    if api_key:
+        genai_client = Client(api_key=api_key)
+except Exception as e:
+    print(f"WARN: Failed to initialize Google GenAI client: {e}")
 
 
 # Nodes

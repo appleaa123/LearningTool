@@ -7,7 +7,7 @@ programmatically with a simple function call.
 from typing import Dict, Any
 from langchain_core.messages import HumanMessage
 
-from agent.graph import graph
+from src.agent.graph import graph
 
 
 def run_deep_research(

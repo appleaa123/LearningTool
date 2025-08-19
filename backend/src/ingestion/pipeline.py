@@ -3,10 +3,10 @@ from __future__ import annotations
 import re
 from typing import Iterable, List, Optional
 
-from ingestion.models import KnowledgeChunk
-from services.lightrag_store import LightRAGStore
-from services.db import session_scope
-from services.models import Source, Chunk, FeedItem, FeedKind
+from src.ingestion.models import KnowledgeChunk
+from src.services.lightrag_store import LightRAGStore
+from src.services.db import session_scope
+from src.services.models import Source, Chunk, FeedItem, FeedKind
 from sqlmodel import select
 
 

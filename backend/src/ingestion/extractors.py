@@ -7,7 +7,7 @@ import base64
 import mimetypes
 from typing import List
 
-from ingestion.models import KnowledgeChunk
+from src.ingestion.models import KnowledgeChunk
 
 
 def extract_text_from_document(file_path: str) -> List[KnowledgeChunk]:

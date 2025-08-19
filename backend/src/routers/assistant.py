@@ -4,10 +4,10 @@ from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from services.deep_research import run_deep_research
-from services.lightrag_store import LightRAGStore
-from services.db import session_scope
-from services.models import Notebook, ResearchSummary, FeedItem, FeedKind
+from src.services.deep_research import run_deep_research
+from src.services.lightrag_store import LightRAGStore
+from src.services.db import session_scope
+from src.services.models import Notebook, ResearchSummary, FeedItem, FeedKind
 from sqlmodel import select
 
 

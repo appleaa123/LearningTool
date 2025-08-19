@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Query, Depends
-from services.lightrag_store import LightRAGStore
+from src.services.lightrag_store import LightRAGStore
 from sqlmodel import Session, select
-from services.db import get_session
-from services.models import FeedItem, Notebook
+from src.services.db import get_session
+from src.services.models import FeedItem, Notebook
 
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])

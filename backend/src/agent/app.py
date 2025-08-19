@@ -21,7 +21,7 @@ app = FastAPI()
 
 # Initialize DB schema on startup/import
 try:
-    from services.db import init_db  # type: ignore
+    from src.services.db import init_db  # type: ignore
     init_db()
 except Exception as exc:
     print(f"WARN: Failed to initialize DB: {exc}")
@@ -66,10 +66,10 @@ app.mount(
 
 # Include application routers
 try:
-    from ingestion.router import router as ingest_router
-    from routers.assistant import router as assistant_router
-    from routers.knowledge import router as knowledge_router
-    from routers.notebooks import router as notebooks_router
+    from src.ingestion.router import router as ingest_router
+    from src.routers.assistant import router as assistant_router
+    from src.routers.knowledge import router as knowledge_router
+    from src.routers.notebooks import router as notebooks_router
 
     app.include_router(ingest_router)
     app.include_router(assistant_router)

@@ -6,7 +6,7 @@ from typing import Iterable, List, Dict, Any, Optional
 from fastapi import BackgroundTasks
 from langchain_core.messages import HumanMessage
 
-from services.llm_provider import get_chat_model
+from src.services.llm_provider import get_chat_model
 
 
 def _provider_and_model() -> tuple[str, str]:

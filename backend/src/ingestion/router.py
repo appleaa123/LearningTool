@@ -18,18 +18,18 @@ from fastapi import (
     Depends,
 )
 
-from ingestion.extractors import (
+from src.ingestion.extractors import (
     extract_text_from_document,
     extract_text_from_image,
     transcribe_audio_to_text,
 )
-from ingestion.models import IngestResponse, KnowledgeChunk
-from ingestion.pipeline import ingest_chunks
-from ingestion.config import get_ingestion_defaults
-from ingestion.transformations import run_transformations_in_background
+from src.ingestion.models import IngestResponse, KnowledgeChunk
+from src.ingestion.pipeline import ingest_chunks
+from src.ingestion.config import get_ingestion_defaults
+from src.ingestion.transformations import run_transformations_in_background
 from sqlmodel import Session, select
-from services.db import get_session
-from services.models import Notebook
+from src.services.db import get_session
+from src.services.models import Notebook
 
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])

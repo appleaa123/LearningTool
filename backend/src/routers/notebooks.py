@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from services.db import get_session
-from services.models import Notebook, Exclusion, ExclusionScope
+from src.services.db import get_session
+from src.services.models import Notebook, Exclusion, ExclusionScope
 
 
 router = APIRouter(prefix="/notebooks", tags=["notebooks"])
