@@ -87,9 +87,9 @@ def run_transformations_in_background(
     - Creates `FeedItem` rows for each artifact.
     - Mirrors artifact text into LightRAG for continuity.
     """
-    from services.lightrag_store import LightRAGStore
-    from services.db import session_scope
-    from services.models import TransformedItem, TransformedType, FeedItem, FeedKind
+    from src.services.lightrag_store import LightRAGStore
+    from src.services.db import session_scope
+    from src.services.models import TransformedItem, TransformedType, FeedItem, FeedKind
 
     def _task() -> None:
         artifacts = _run_transformations(chunk_texts)
@@ -134,8 +134,14 @@ def run_transformations_in_background(
                 mirror_texts.append({"text": f"[{item.type.value.upper()}]\n{content}"})
 
         if mirror_texts:
+            import asyncio
             store = LightRAGStore(user_id=user_id)
-            store.insert(mirror_texts)
+            try:
+                # Run async insert in the background task
+                asyncio.run(store.insert(mirror_texts))
+            except Exception as e:
+                # Log the error but don't fail the background task
+                print(f"Warning: Failed to mirror transformations to LightRAG: {e}")
 
     if background_tasks is not None:
         background_tasks.add_task(_task)

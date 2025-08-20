@@ -35,10 +35,10 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
     },
     {
-      command: 'cd ../backend && python -m uvicorn src.routers.assistant:app --host 0.0.0.0 --port 2024',
-      url: 'http://localhost:2024/docs',
+      command: 'cd ../backend && ./start_test_server.sh',
+      url: 'http://localhost:2024/health',
       reuseExistingServer: !process.env.CI,
-      timeout: 30000,
+      timeout: 60000,
     },
   ],
 });

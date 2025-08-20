@@ -59,7 +59,7 @@ async def ingest_text_endpoint(
 ):
     nid = _resolve_notebook_id(session, user_id, notebook_id)
     chunk = KnowledgeChunk(text=text, source_type="text", metadata={"ingest": "text"})
-    ids = ingest_chunks([chunk], user_id, notebook_id=nid)
+    ids = await ingest_chunks([chunk], user_id, notebook_id=nid)
     # Background transformations linked to notebook
     run_transformations_in_background(background_tasks, user_id=user_id, notebook_id=nid, chunk_ids=ids, chunk_texts=[chunk.text])
     return IngestResponse(inserted=len(ids), ids=ids)
@@ -162,7 +162,7 @@ async def ingest_document_endpoint(
         path = _save_upload(file)
         chunks = extract_text_from_document(path)
         nid = _resolve_notebook_id(session, user_id, notebook_id)
-        ids = ingest_chunks(chunks, user_id, notebook_id=nid)
+        ids = await ingest_chunks(chunks, user_id, notebook_id=nid)
     except HTTPException:
         raise
     except (RuntimeError, ValueError) as exc:
@@ -191,7 +191,7 @@ async def ingest_image_endpoint(
         path = _save_upload(file)
         chunks = extract_text_from_image(path, provider=provider)
         nid = _resolve_notebook_id(session, user_id, notebook_id)
-        ids = ingest_chunks(chunks, user_id, notebook_id=nid)
+        ids = await ingest_chunks(chunks, user_id, notebook_id=nid)
     except HTTPException:
         raise
     except (RuntimeError, ValueError) as exc:
@@ -225,7 +225,7 @@ async def ingest_audio_endpoint(
         path = _save_upload(file)
         chunks = transcribe_audio_to_text(path, provider=provider)
         nid = _resolve_notebook_id(session, user_id, notebook_id)
-        ids = ingest_chunks(chunks, user_id, notebook_id=nid)
+        ids = await ingest_chunks(chunks, user_id, notebook_id=nid)
     except HTTPException:
         raise
     except (RuntimeError, ValueError) as exc:

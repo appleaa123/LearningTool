@@ -11,23 +11,28 @@ test.describe('Knowledge Ingestion', () => {
     await page.click('button:has-text("Add to Knowledge")');
     await expect(page.locator('.fixed.right-0')).toBeVisible();
     
-    // Create test file
+    // Create test file in the document upload section
     const testContent = 'This is a test document for ingestion testing.';
     await page.evaluate((content) => {
       const file = new File([content], 'test.txt', { type: 'text/plain' });
       const dt = new DataTransfer();
       dt.items.add(file);
-      const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-      if (input) input.files = dt.files;
+      // Look for the file input in the document upload section
+      const inputs = document.querySelectorAll('input[type="file"]');
+      const documentInput = Array.from(inputs).find(input => 
+        input.accept?.includes('.txt') || input.accept?.includes('text/plain')
+      ) as HTMLInputElement;
+      if (documentInput) documentInput.files = dt.files;
     }, testContent);
     
-    // Upload the file
-    const fileInput = page.locator('input[type="file"]').first();
+    // Find the document upload file input and trigger change
+    const documentFileInput = page.locator('input[type="file"]').nth(2); // Third file input is for documents
+    await documentFileInput.dispatchEvent('change');
     
-    // Trigger change event
-    await fileInput.dispatchEvent('change');
+    // Click upload button
+    await page.click('button:has-text("Upload Document")');
     
-    // Wait for success message
+    // Wait for success message - look for the actual success text structure
     await expect(page.locator('.text-green-400')).toContainText('Created chunks', { timeout: 10000 });
     
     // Close drawer
@@ -38,14 +43,12 @@ test.describe('Knowledge Ingestion', () => {
     await page.goto('/');
     
     // Test direct text input via API
-    const response = await page.request.post('/api/ingest/text', {
-      data: {
-        text: 'Direct text input for testing',
-        user_id: 'test-user'
-      },
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      }
+    const formData = new FormData();
+    formData.append('text', 'Direct text input for testing');
+    formData.append('user_id', 'test-user');
+    
+    const response = await page.request.post('http://localhost:2024/ingest/text', {
+      data: formData
     });
     
     expect(response.ok()).toBeTruthy();

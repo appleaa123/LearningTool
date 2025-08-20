@@ -11,7 +11,8 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:debug": "playwright test --debug"
+    "test:e2e:debug": "playwright test --debug",
+    "test:e2e:setup": "cd ../backend && chmod +x start_test_server.sh"
   },
   "dependencies": {
     "@langchain/core": "^0.3.55",

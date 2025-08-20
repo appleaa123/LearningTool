@@ -25,9 +25,9 @@ class AskRequest(BaseModel):
 
 
 @router.post("/ask")
-def ask_endpoint(req: AskRequest):
+async def ask_endpoint(req: AskRequest):
     store = LightRAGStore(req.user_id)
-    rag_answer = store.query(req.question)
+    rag_answer = await store.query(req.question)
 
     if req.deep_research:
         loops_by_effort = {"low": 1, "medium": 3, "high": 10}

@@ -220,11 +220,11 @@ def transcribe_audio_to_text(file_path: str, provider: str = "whisper") -> List[
             )
         ]
 
-    # Prefer faster-whisper if available; else fall back to Whisper CLI
+    # Prefer faster-whisper if available; else fall back to API
     try:
         from faster_whisper import WhisperModel  # type: ignore
 
-        model_size = os.getenv("FASTER_WHISPER_MODEL", "medium")
+        model_size = os.getenv("FASTER_WHISPER_MODEL", "base")  # Use smaller default model
         device = os.getenv("FASTER_WHISPER_DEVICE", "cpu")
         compute_type = os.getenv("FASTER_WHISPER_COMPUTE", "int8")
         model = WhisperModel(model_size, device=device, compute_type=compute_type)
@@ -242,7 +242,7 @@ def transcribe_audio_to_text(file_path: str, provider: str = "whisper") -> List[
                     metadata={
                         "source_type": "audio",
                         "source_uri": file_path,
-                        "asr_provider": "whisper-faster",
+                        "asr_provider": "faster-whisper",
                         "start": float(getattr(seg, "start", 0.0)),
                         "end": float(getattr(seg, "end", 0.0)),
                     },
@@ -250,45 +250,22 @@ def transcribe_audio_to_text(file_path: str, provider: str = "whisper") -> List[
             )
         if chunks:
             return chunks
-        # If faster-whisper yielded no chunks, fall through to CLI
-    except Exception:
-        pass
+        # If faster-whisper yielded no chunks, fall through to API
+    except Exception as e:
+        print(f"faster-whisper failed: {e}")  # Debug logging
+        # Fall back to OpenAI API if available
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if openai_key:
+            return transcribe_audio_to_text(file_path, "openai")
+        # Fall back to Gemini API if available  
+        gemini_key = os.getenv("GEMINI_API_KEY")
+        if gemini_key:
+            return transcribe_audio_to_text(file_path, "gemini")
 
-    # Whisper CLI fallback
-    output_dir = os.getenv("WHISPER_TMP", "/tmp")
-    base = os.path.splitext(os.path.basename(file_path))[0]
-    txt_path = os.path.join(output_dir, f"{base}.txt")
-    try:
-        subprocess.run(
-            [
-                "whisper",
-                file_path,
-                "--language",
-                os.getenv("WHISPER_LANG", "en"),
-                "--model",
-                os.getenv("WHISPER_MODEL", "large-v3"),
-                "--output_format",
-                "txt",
-                "--output_dir",
-                output_dir,
-            ],
-            check=True,
-            capture_output=True,
-        )
-    except FileNotFoundError as exc:  # pragma: no cover
-        raise RuntimeError("`whisper` CLI not found. Install openai-whisper or switch to API-based ASR.") from exc
-    if not os.path.exists(txt_path):
-        raise RuntimeError("Whisper did not produce a transcript file.")
-    with open(txt_path, "r", encoding="utf-8") as f:
-        text = f.read().strip()
-    text = redact_pii(text)
-    return [
-        KnowledgeChunk(
-            text=text,
-            source_type="audio",
-            source_uri=file_path,
-            metadata={"source_type": "audio", "source_uri": file_path, "asr_provider": normalized_provider},
-        )
-    ]
+    # No transcription method available
+    raise RuntimeError(
+        f"Audio transcription failed. The backend is not working and no API keys available. "
+        f"Please ensure OPENAI_API_KEY or GEMINI_API_KEY is set, or log an issue on GitHub."
+    )
 
 

@@ -19,7 +19,7 @@ def _normalize_text(text: str) -> str:
     return text
 
 
-def ingest_chunks(
+async def ingest_chunks(
     chunks: Iterable[KnowledgeChunk],
     user_id: str,
     *,
@@ -97,7 +97,7 @@ def ingest_chunks(
 
         # Mirror into LightRAG
         store = LightRAGStore(user_id=user_id)
-        rag_ids = store.insert([{"text": k.text} for k in normalized])
+        rag_ids = await store.insert([{"text": k.text} for k in normalized])
 
     return rag_ids
 
