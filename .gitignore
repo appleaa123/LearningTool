@@ -217,3 +217,5 @@ frontend/playwright-report/
 
 #Claude.md
 CLAUDE.local.md
+.trees/
+.claude
