@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List
@@ -59,14 +60,35 @@ class LightRAGStore:
 
         LightRAG's insert accepts a list of strings. We map the incoming chunk dicts
         to the `text` field and ignore empty entries.
+        
+        Includes workaround for LightRAG v1.4.6 UnboundLocalError bug.
         """
         await self._ensure_initialized()
         texts = [c.get("text", "").strip() for c in chunks if c.get("text")]
         if not texts:
             return []
-        await self.rag.ainsert(texts)
-        # LightRAG doesn't return IDs; we synthesize sequential placeholders.
-        return [str(i) for i in range(len(texts))]
+        
+        try:
+            await self.rag.ainsert(texts)
+            # LightRAG doesn't return IDs; we synthesize sequential placeholders.
+            return [str(i) for i in range(len(texts))]
+        except UnboundLocalError as e:
+            # Handle LightRAG v1.4.6 bug: "cannot access local variable 'first_stage_tasks'"
+            if "first_stage_tasks" in str(e):
+                logging.warning(f"LightRAG v1.4.6 bug encountered: {e}. Document ingestion skipped.")
+                # Return empty list to indicate insertion failed gracefully
+                # This allows the system to continue operating without crashing
+                raise RuntimeError(
+                    "Document ingestion temporarily unavailable due to LightRAG library bug. "
+                    "Please try again later or contact support."
+                ) from e
+            else:
+                # Re-raise other UnboundLocalErrors as they might be different issues
+                raise
+        except Exception as e:
+            # Log other unexpected errors for debugging
+            logging.error(f"Unexpected error during LightRAG insertion: {e}")
+            raise RuntimeError(f"Failed to ingest document: {e}") from e
 
     async def query(self, question: str, mode: str = "hybrid") -> str:
         await self._ensure_initialized()

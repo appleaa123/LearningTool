@@ -156,11 +156,14 @@ async def ingest_document_endpoint(
     file: UploadFile = File(...),
     user_id: str = Form("anon"),
     notebook_id: int | None = Form(None),
+    document_provider: str | None = Form(None),
     session: Session = Depends(get_session),
 ):
+    defaults = get_ingestion_defaults()
+    provider = (document_provider or defaults["document_processor"]).lower()
     try:
         path = _save_upload(file)
-        chunks = extract_text_from_document(path)
+        chunks = extract_text_from_document(path, provider=provider)
         nid = _resolve_notebook_id(session, user_id, notebook_id)
         ids = await ingest_chunks(chunks, user_id, notebook_id=nid)
     except HTTPException:
@@ -187,6 +190,7 @@ async def ingest_image_endpoint(
 ):
     defaults = get_ingestion_defaults()
     provider = (vision_provider or defaults["image_processor"]).lower()
+    print(f"DEBUG ROUTER: vision_provider={vision_provider}, defaults={defaults}, final_provider={provider}")
     try:
         path = _save_upload(file)
         chunks = extract_text_from_image(path, provider=provider)

@@ -38,7 +38,8 @@ LANGCHAIN_PROJECT=deep-research
 UPLOAD_TMP_DIR=/tmp
 LIGHTRAG_BASE_DIR=/Users/allenliu/Desktop/ML-Project/LearningTool/data/lightrag
 SQLITE_DB_PATH=/Users/allenliu/Desktop/ML-Project/LearningTool/data/app.db
-INGEST_IMAGE_PROCESSOR=ocr        # ocr | gemini
+INGEST_IMAGE_PROCESSOR=gemini      # ocr | gemini
+INGEST_DOCUMENT_PROCESSOR=gemini   # unstructured | gemini | openai
 INGEST_AUDIO_ASR=whisper          # whisper | openai | gemini
 INGESTION_REDACT_PII=false        # true to enable regex-based redaction
 

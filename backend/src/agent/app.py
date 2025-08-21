@@ -19,6 +19,16 @@ except Exception:
 
 app = FastAPI()
 
+# Validate environment configuration on startup
+try:
+    from src.config.env_validation import validate_environment, get_environment_type
+    environment_type = get_environment_type()
+    validation_result = validate_environment(environment_type, exit_on_error=False)
+    if validation_result.has_errors:
+        print("⚠️  Environment validation failed - some features may not work correctly")
+except Exception as exc:
+    print(f"WARN: Failed to validate environment: {exc}")
+
 # Initialize DB schema on startup/import
 try:
     from src.services.db import init_db  # type: ignore

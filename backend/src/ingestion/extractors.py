@@ -10,16 +10,133 @@ from typing import List
 from src.ingestion.models import KnowledgeChunk
 
 
-def extract_text_from_document(file_path: str) -> List[KnowledgeChunk]:
-    """Extract text from common document formats using `unstructured`.
+def extract_text_from_document(file_path: str, provider: str | None = None) -> List[KnowledgeChunk]:
+    """Extract text from document formats using LLM APIs or unstructured library.
 
-    Supports PDF, DOCX, PPTX, TXT, MD and others detected automatically.
+    - provider="gemini": uses Gemini Vision/Document AI through google-genai
+    - provider="openai": uses OpenAI GPT-4 Vision for document processing
+    - provider="unstructured": uses unstructured library (default fallback)
     """
+    selected = (provider or os.getenv("INGEST_DOCUMENT_PROCESSOR", "unstructured")).lower()
+    
+    if selected == "gemini":
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise RuntimeError("GEMINI_API_KEY is not set for Gemini document processing.")
+        model_id = os.getenv("GEMINI_DOCUMENT_MODEL", os.getenv("GEMINI_DEFAULT_MODEL", "gemini-1.5-flash"))
+        try:
+            from google.genai import Client  # lazy import
+        except Exception as exc:
+            raise RuntimeError("google-genai package is required for Gemini document processing.") from exc
+        
+        with open(file_path, "rb") as f:
+            doc_bytes = f.read()
+        mime_type, _ = mimetypes.guess_type(file_path)
+        mime_type = mime_type or "application/octet-stream"
+        encoded = base64.b64encode(doc_bytes).decode("utf-8")
+        
+        client = Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=model_id,
+            contents=[
+                {
+                    "role": "user",
+                    "parts": [
+                        {"text": "Extract all readable text from this document. Preserve structure and formatting. Reply with plain text only."},
+                        {"inline_data": {"mime_type": mime_type, "data": encoded}},
+                    ],
+                }
+            ],
+        )
+        text = (getattr(response, "text", None) or "").strip()
+        text = redact_pii(text)
+        return [
+            KnowledgeChunk(
+                text=text,
+                source_type="document",
+                source_uri=file_path,
+                metadata={"source_type": "document", "source_uri": file_path, "provider": "gemini", "model": model_id},
+            )
+        ]
+    
+    if selected == "openai":
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY is not set for OpenAI document processing.")
+        model_id = os.getenv("OPENAI_DOCUMENT_MODEL", "gpt-4o")
+        
+        # For OpenAI, we'll use vision API for image-based documents or text extraction
+        with open(file_path, "rb") as f:
+            doc_bytes = f.read()
+        mime_type, _ = mimetypes.guess_type(file_path)
+        
+        if mime_type and mime_type.startswith("text/"):
+            # Handle plain text files directly
+            text = doc_bytes.decode("utf-8", errors="ignore").strip()
+            text = redact_pii(text)
+            return [
+                KnowledgeChunk(
+                    text=text,
+                    source_type="document",
+                    source_uri=file_path,
+                    metadata={"source_type": "document", "source_uri": file_path, "provider": "openai", "direct_text": True},
+                )
+            ]
+        else:
+            # Use OpenAI Vision API for other document types
+            try:
+                import requests  # lazy import
+            except Exception as exc:
+                raise RuntimeError("The 'requests' package is required for OpenAI document processing.") from exc
+            
+            encoded = base64.b64encode(doc_bytes).decode("utf-8")
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            data = {
+                "model": model_id,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Extract all readable text from this document. Preserve structure and formatting. Reply with plain text only."},
+                            {"type": "image_url", "image_url": {"url": f"data:{mime_type or 'application/octet-stream'};base64,{encoded}"}}
+                        ]
+                    }
+                ],
+                "max_tokens": 4000
+            }
+            
+            resp = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers=headers,
+                json=data,
+                timeout=120,
+            )
+            
+            if resp.status_code >= 300:
+                raise RuntimeError(f"OpenAI document processing failed: {resp.status_code} {resp.text}")
+            
+            result = resp.json()
+            text = (result.get("choices", [{}])[0].get("message", {}).get("content", "")).strip()
+            text = redact_pii(text)
+            return [
+                KnowledgeChunk(
+                    text=text,
+                    source_type="document",
+                    source_uri=file_path,
+                    metadata={"source_type": "document", "source_uri": file_path, "provider": "openai", "model": model_id},
+                )
+            ]
+
+    # Default unstructured path
     try:
         from unstructured.partition.auto import partition  # lazy import
     except Exception as exc:  # pragma: no cover - available after deps installed
         raise RuntimeError(
-            "`unstructured` is required for document parsing."
+            "`unstructured` is required for document parsing. "
+            "Alternatively, set INGEST_DOCUMENT_PROCESSOR=gemini or openai to use API-based processing."
         ) from exc
 
     elements = partition(filename=file_path)
@@ -32,7 +149,7 @@ def extract_text_from_document(file_path: str) -> List[KnowledgeChunk]:
                     text=text.strip(),
                     source_type="document",
                     source_uri=file_path,
-                    metadata={"category": getattr(element, "category", None)},
+                    metadata={"category": getattr(element, "category", None), "provider": "unstructured"},
                 )
             )
     return chunks
@@ -61,7 +178,8 @@ def extract_text_from_image(file_path: str, provider: str | None = None) -> List
     - provider="ocr": uses Pillow + pytesseract
     - provider="gemini": uses Gemini Vision through google-genai
     """
-    selected = (provider or os.getenv("INGEST_IMAGE_PROCESSOR", "ocr")).lower()
+    selected = (provider or os.getenv("INGEST_IMAGE_PROCESSOR", "gemini")).lower()
+    print(f"DEBUG: Image processor selected: {selected}, provider param: {provider}, env var: {os.getenv('INGEST_IMAGE_PROCESSOR')}")
     if selected == "gemini":
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
