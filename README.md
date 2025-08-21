@@ -16,39 +16,54 @@ This project is a fullstack application that helps users build a personal knowle
 
 ---
 
-## Environment configuration
+## Environment Configuration
 
-Create `backend/env` (preferred for local dev) with your keys:
+### 🔐 Secure Setup (Required)
 
-```dotenv
-# Whether to accept per-request keys via LangGraph configurable input
-GET_API_KEYS_FROM_CONFIG=true
+1. **Copy the environment template:**
+   ```bash
+   cd backend
+   cp .env.example env
+   ```
 
-# Google / Gemini
-GEMINI_API_KEY=...
+2. **Fill in your API keys** in `backend/env`:
+   ```dotenv
+   # Core API keys (required for multimodal processing)
+   GEMINI_API_KEY=your_actual_gemini_key_here
+   OPENAI_API_KEY=your_actual_openai_key_here
+   
+   # Web search (recommended)
+   TAVILY_API_KEY=your_actual_tavily_key_here
+   
+   # Processing configuration (production-ready defaults)
+   INGEST_IMAGE_PROCESSOR=gemini      # Uses Gemini Vision API
+   INGEST_DOCUMENT_PROCESSOR=gemini   # Uses Gemini for PDF/document processing
+   ```
 
-# OpenAI (direct) OR OpenRouter (OpenAI-compatible)
-OPENAI_API_KEY=sk-...
-OPENROUTER_API_KEY=sk-or-...
-OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+3. **The application will validate your configuration** on startup and provide helpful error messages if anything is missing.
 
-# Optional providers
-ANTHROPIC_API_KEY=
-GROQ_API_KEY=
-DEEPSEEK_API_KEY=
+### 🚨 Security Notes
 
-# Web search (optional if using Google GENAI search tools)
-TAVILY_API_KEY=tvly-...
+- ✅ `backend/env` and `backend/.env` are automatically excluded from version control
+- ✅ Use the `.env.example` template to see all available options
+- ✅ For production deployment, use environment variables instead of files
+- ✅ API keys are validated on startup with clear error messages
 
-# Tracing (optional)
-LANGCHAIN_TRACING_V2=false
-LANGCHAIN_API_KEY=
+### 🐳 Production Deployment
 
-# LightRAG storage
-LIGHTRAG_BASE_DIR=/data/lightrag
+For production (Docker), use environment variables:
+```bash
+# Example docker-compose with external environment variables
+GEMINI_API_KEY=your_key OPENAI_API_KEY=your_key docker-compose up
 ```
 
-You can also pass per-request keys from the frontend via LangGraph configurable input when `GET_API_KEYS_FROM_CONFIG=true`.
+### ⚙️ Complete Configuration Options
+
+See `backend/.env.example` for all available options including:
+- **Multimodal Processing**: Image, document, and audio processing providers
+- **LLM Models**: Gemini, OpenAI, OpenRouter, Anthropic support
+- **Storage Paths**: LightRAG and database file locations
+- **Optional Features**: Web search, tracing, PII redaction
 
 ---
 

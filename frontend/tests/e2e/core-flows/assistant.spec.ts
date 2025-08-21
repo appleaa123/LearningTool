@@ -1,8 +1,7 @@
-import { test, expect, TestHelpers } from '../utils/setup';
+import { test, expect } from '../utils/setup';
 
 test.describe('AI Assistant Interaction', () => {
   test('should ask a simple question and get response', async ({ page }) => {
-    const helpers = new TestHelpers(page);
     
     await page.goto('/');
     

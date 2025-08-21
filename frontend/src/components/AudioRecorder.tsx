@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { AudioRecordingError } from "@/types/langgraph";
 
 type ProviderFlags = { openai?: boolean; gemini?: boolean };
 
@@ -46,8 +47,8 @@ export function AudioRecorder({ userId = "anon", providers, notebookId, onSucces
       recorder.start();
       setMediaRecorder(recorder);
       setIsRecording(true);
-    } catch (e: any) {
-      const msg = e?.message || "Microphone permission denied or unsupported";
+    } catch (e: unknown) {
+      const msg = (e as AudioRecordingError)?.message || "Microphone permission denied or unsupported";
       setError(msg);
       onError?.(msg);
     }
@@ -82,8 +83,8 @@ export function AudioRecorder({ userId = "anon", providers, notebookId, onSucces
       const data: { inserted: number; ids: string[] } = await res.json();
       setIds(data.ids);
       onSuccess?.(data.ids);
-    } catch (e: any) {
-      const msg = e?.message || "Failed to upload audio";
+    } catch (e: unknown) {
+      const msg = (e as AudioRecordingError)?.message || "Failed to upload audio";
       setError(msg);
       onError?.(msg);
     }

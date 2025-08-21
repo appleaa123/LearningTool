@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { AudioRecordingError } from "@/types/langgraph";
 
 type ProviderFlags = { openai?: boolean; gemini?: boolean };
 
@@ -21,7 +22,7 @@ export function MediaUploader({ userId = "anon", providers, notebookId, onSucces
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ids, setIds] = useState<string[] | null>(null);
-  const [visionProvider, setVisionProvider] = useState<string>("ocr"); // ocr | gemini
+  const [visionProvider, setVisionProvider] = useState<string>("gemini"); // ocr | gemini
 
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
   const apiBase = import.meta.env.DEV ? "/api" : "";
@@ -49,8 +50,8 @@ export function MediaUploader({ userId = "anon", providers, notebookId, onSucces
       const data: { inserted: number; ids: string[] } = await res.json();
       setIds(data.ids);
       onSuccess?.(data.ids);
-    } catch (e: any) {
-      const msg = e?.message || "Failed to upload image";
+    } catch (e: unknown) {
+      const msg = (e as AudioRecordingError)?.message || "Failed to upload image";
       setError(msg);
       onError?.(msg);
     } finally {

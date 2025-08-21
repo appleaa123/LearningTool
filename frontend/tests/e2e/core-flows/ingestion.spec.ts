@@ -1,8 +1,7 @@
-import { test, expect, TestHelpers } from '../utils/setup';
+import { test, expect } from '../utils/setup';
 
 test.describe('Knowledge Ingestion', () => {
   test('should upload and process a text document', async ({ page }) => {
-    const helpers = new TestHelpers(page);
     
     // Navigate to home page
     await page.goto('/');
@@ -58,7 +57,6 @@ test.describe('Knowledge Ingestion', () => {
   });
 
   test('should show upload progress and handle errors', async ({ page }) => {
-    const helpers = new TestHelpers(page);
     
     await page.goto('/');
     await page.click('button:has-text("Add to Knowledge")');

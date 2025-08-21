@@ -2,7 +2,7 @@ import { test as base, expect } from '@playwright/test';
 
 export const test = base.extend({
   // Global setup for all tests
-  async page({ page }, use) {
+  async page({ page }, use: (page: import('@playwright/test').Page) => Promise<void>) {
     // Clear any existing data before each test
     await page.goto('/');
     
@@ -20,7 +20,7 @@ export { expect } from '@playwright/test';
 
 // Helper functions
 export class TestHelpers {
-  constructor(private page: any) {}
+  constructor(private page: import('@playwright/test').Page) {}
 
   async waitForAssistantResponse() {
     // Wait for loading state to finish

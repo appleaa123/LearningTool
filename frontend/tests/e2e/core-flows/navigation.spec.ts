@@ -1,8 +1,7 @@
-import { test, expect, TestHelpers } from '../utils/setup';
+import { test, expect } from '../utils/setup';
 
 test.describe('Application Navigation', () => {
   test('should navigate between all main pages', async ({ page }) => {
-    const helpers = new TestHelpers(page);
     
     // Start at home
     await page.goto('/');

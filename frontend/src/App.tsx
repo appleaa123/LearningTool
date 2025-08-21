@@ -2,6 +2,7 @@ import { useStream } from "@langchain/langgraph-sdk/react";
 import type { Message } from "@langchain/langgraph-sdk";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { ProcessedEvent } from "@/components/ActivityTimeline";
+import { LangGraphEvent, ProviderAvailability } from "@/types/langgraph";
 import { WelcomeScreen } from "@/components/WelcomeScreen";
 import { ChatMessagesView } from "@/components/ChatMessagesView";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ import { MediaUploader } from "@/components/MediaUploader";
 import { AudioRecorder } from "@/components/AudioRecorder";
 import { DocumentUploader } from "@/components/DocumentUploader";
 import { NotebookSelector } from "@/components/NotebookSelector";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 export default function App() {
   const [processedEventsTimeline, setProcessedEventsTimeline] = useState<
@@ -23,7 +25,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [isKnowledgeDrawerOpen, setIsKnowledgeDrawerOpen] = useState(false);
   const [lastIngestIds, setLastIngestIds] = useState<string[] | null>(null);
-  const [availableProviders, setAvailableProviders] = useState<{ openai?: boolean; gemini?: boolean }>({});
+  const [availableProviders, setAvailableProviders] = useState<ProviderAvailability>({});
   const [notebookId, setNotebookId] = useState<number | null>(null);
   const thread = useStream<{
     messages: Message[];
@@ -36,7 +38,7 @@ export default function App() {
       : "http://localhost:8123",
     assistantId: "agent",
     messagesKey: "messages",
-    onUpdateEvent: (event: any) => {
+    onUpdateEvent: (event: LangGraphEvent) => {
       let processedEvent: ProcessedEvent | null = null;
       // Legacy backend events
       if (event.generate_query) {
@@ -48,7 +50,7 @@ export default function App() {
         const sources = event.web_research.sources_gathered || [];
         const numSources = sources.length;
         const uniqueLabels = [
-          ...new Set(sources.map((s: any) => s.label).filter(Boolean)),
+          ...new Set(sources.map((s) => (s as Record<string, unknown>)?.label).filter(Boolean)),
         ];
         const exampleLabels = uniqueLabels.slice(0, 3).join(", ");
         processedEvent = {
@@ -90,8 +92,8 @@ export default function App() {
         setProcessedEventsTimeline((prevEvents) => [...prevEvents, processedEvent!]);
       }
     },
-    onError: (error: any) => {
-      setError(error.message);
+    onError: (error: unknown) => {
+      setError((error as Error).message);
     },
   });
 
@@ -102,7 +104,9 @@ export default function App() {
       try {
         const data = await r.json();
         setAvailableProviders({ openai: !!data.openai, gemini: !!data.gemini });
-      } catch (_) {}
+      } catch {
+        // Silently handle parsing errors
+      }
     }).catch(() => {});
   }, []);
 
@@ -135,7 +139,7 @@ export default function App() {
   }, [thread.messages, thread.isLoading, processedEventsTimeline]);
 
   const handleSubmit = useCallback(
-    (submittedInputValue: string, _effort: string, _model: string) => {
+    (submittedInputValue: string) => {
       if (!submittedInputValue.trim()) return;
       setProcessedEventsTimeline([]);
       hasFinalizeEventOccurredRef.current = false;
@@ -149,14 +153,14 @@ export default function App() {
         },
       ];
       // Pass optional provider keys via configurable when enabled on backend
-      (thread.submit as any)({
+      (thread.submit as (config: Record<string, unknown>) => void)({
         messages: newMessages,
         configurable: {
           apiKeys: {
-            OPENAI_API_KEY: (window as any)?.OPENAI_API_KEY,
-            ANTHROPIC_API_KEY: (window as any)?.ANTHROPIC_API_KEY,
-            GOOGLE_API_KEY: (window as any)?.GOOGLE_API_KEY,
-            TAVILY_API_KEY: (window as any)?.TAVILY_API_KEY,
+            OPENAI_API_KEY: (window as unknown as Record<string, unknown>)?.OPENAI_API_KEY,
+            ANTHROPIC_API_KEY: (window as unknown as Record<string, unknown>)?.ANTHROPIC_API_KEY,
+            GOOGLE_API_KEY: (window as unknown as Record<string, unknown>)?.GOOGLE_API_KEY,
+            TAVILY_API_KEY: (window as unknown as Record<string, unknown>)?.TAVILY_API_KEY,
           },
         },
       });
@@ -179,11 +183,13 @@ export default function App() {
             </Button>
           </div>
           {thread.messages.length === 0 ? (
-            <WelcomeScreen
-              handleSubmit={handleSubmit}
-              isLoading={thread.isLoading}
-              onCancel={handleCancel}
-            />
+            <ErrorBoundary>
+              <WelcomeScreen
+                handleSubmit={handleSubmit}
+                isLoading={thread.isLoading}
+                onCancel={handleCancel}
+              />
+            </ErrorBoundary>
           ) : error ? (
             <div className="flex flex-col items-center justify-center h-full">
               <div className="flex flex-col items-center justify-center gap-4">
@@ -199,15 +205,17 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <ChatMessagesView
-              messages={thread.messages}
-              isLoading={thread.isLoading}
-              scrollAreaRef={scrollAreaRef}
-              onSubmit={handleSubmit}
-              onCancel={handleCancel}
-              liveActivityEvents={processedEventsTimeline}
-              historicalActivities={historicalActivities}
-            />
+            <ErrorBoundary>
+              <ChatMessagesView
+                messages={thread.messages}
+                isLoading={thread.isLoading}
+                scrollAreaRef={scrollAreaRef}
+                onSubmit={handleSubmit}
+                onCancel={handleCancel}
+                liveActivityEvents={processedEventsTimeline}
+                historicalActivities={historicalActivities}
+              />
+            </ErrorBoundary>
           )}
           {isKnowledgeDrawerOpen && (
             <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setIsKnowledgeDrawerOpen(false)} />
@@ -223,32 +231,38 @@ export default function App() {
                 <h2 className="text-lg font-semibold">Add to Knowledge</h2>
                 <Button variant="ghost" onClick={() => setIsKnowledgeDrawerOpen(false)}>Close</Button>
               </div>
-              <Card className="p-3 bg-neutral-900 border-neutral-700">
-                <p className="text-sm text-neutral-300 mb-2">Photo upload</p>
-                <MediaUploader
-                  providers={availableProviders}
-                  notebookId={notebookId ?? undefined}
-                  onSuccess={(ids) => setLastIngestIds(ids)}
-                  onError={(msg) => console.warn(msg)}
-                />
-              </Card>
-              <Card className="p-3 bg-neutral-900 border-neutral-700">
-                <p className="text-sm text-neutral-300 mb-2">Voice input</p>
-                <AudioRecorder
-                  providers={availableProviders}
-                  notebookId={notebookId ?? undefined}
-                  onSuccess={(ids) => setLastIngestIds(ids)}
-                  onError={(msg) => console.warn(msg)}
-                />
-              </Card>
-              <Card className="p-3 bg-neutral-900 border-neutral-700">
-                <p className="text-sm text-neutral-300 mb-2">Document upload</p>
-                <DocumentUploader
-                  notebookId={notebookId ?? undefined}
-                  onSuccess={(ids) => setLastIngestIds(ids)}
-                  onError={(msg) => console.warn(msg)}
-                />
-              </Card>
+              <ErrorBoundary>
+                <Card className="p-3 bg-neutral-900 border-neutral-700">
+                  <p className="text-sm text-neutral-300 mb-2">Photo upload</p>
+                  <MediaUploader
+                    providers={availableProviders}
+                    notebookId={notebookId ?? undefined}
+                    onSuccess={(ids) => setLastIngestIds(ids)}
+                    onError={(msg) => console.warn(msg)}
+                  />
+                </Card>
+              </ErrorBoundary>
+              <ErrorBoundary>
+                <Card className="p-3 bg-neutral-900 border-neutral-700">
+                  <p className="text-sm text-neutral-300 mb-2">Voice input</p>
+                  <AudioRecorder
+                    providers={availableProviders}
+                    notebookId={notebookId ?? undefined}
+                    onSuccess={(ids) => setLastIngestIds(ids)}
+                    onError={(msg) => console.warn(msg)}
+                  />
+                </Card>
+              </ErrorBoundary>
+              <ErrorBoundary>
+                <Card className="p-3 bg-neutral-900 border-neutral-700">
+                  <p className="text-sm text-neutral-300 mb-2">Document upload</p>
+                  <DocumentUploader
+                    notebookId={notebookId ?? undefined}
+                    onSuccess={(ids) => setLastIngestIds(ids)}
+                    onError={(msg) => console.warn(msg)}
+                  />
+                </Card>
+              </ErrorBoundary>
               {lastIngestIds && (
                 <div className="text-green-400 text-sm bg-green-950/40 border border-green-700 rounded p-2">
                   Created chunks. IDs: {lastIngestIds.join(", ")}

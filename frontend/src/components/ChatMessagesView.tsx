@@ -1,11 +1,11 @@
-import type React from "react";
+import React from "react";
 import type { Message } from "@langchain/langgraph-sdk";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, Copy, CopyCheck } from "lucide-react";
 import { InputForm } from "@/components/InputForm";
 import { Button } from "@/components/ui/button";
 import { useState, ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -13,15 +13,14 @@ import {
   ProcessedEvent,
 } from "@/components/ActivityTimeline"; // Assuming ActivityTimeline is in the same dir or adjust path
 
-// Markdown component props type from former ReportView
-type MdComponentProps = {
-  className?: string;
+// Markdown component props type compatible with ReactMarkdown
+type MdComponentProps = React.HTMLAttributes<HTMLElement> & {
   children?: ReactNode;
-  [key: string]: any;
+  href?: string;
 };
 
 // Markdown components (from former ReportView.tsx)
-const mdComponents = {
+const mdComponents: Components = {
   h1: ({ className, children, ...props }: MdComponentProps) => (
     <h1 className={cn("text-2xl font-bold mt-4 mb-2", className)} {...props}>
       {children}
@@ -46,7 +45,7 @@ const mdComponents = {
     <Badge className="text-xs mx-0.5">
       <a
         className={cn("text-blue-400 hover:text-blue-300 text-xs", className)}
-        href={href}
+        href={href as string}
         target="_blank"
         rel="noopener noreferrer"
         {...props}
@@ -226,13 +225,13 @@ interface ChatMessagesViewProps {
   messages: Message[];
   isLoading: boolean;
   scrollAreaRef: React.RefObject<HTMLDivElement | null>;
-  onSubmit: (inputValue: string, effort: string, model: string) => void;
+  onSubmit: (inputValue: string) => void;
   onCancel: () => void;
   liveActivityEvents: ProcessedEvent[];
   historicalActivities: Record<string, ProcessedEvent[]>;
 }
 
-export function ChatMessagesView({
+export const ChatMessagesView = React.memo(function ChatMessagesView({
   messages,
   isLoading,
   scrollAreaRef,
@@ -319,4 +318,4 @@ export function ChatMessagesView({
       />
     </div>
   );
-}
+});

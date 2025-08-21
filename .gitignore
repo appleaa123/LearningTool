@@ -168,6 +168,10 @@ ENV/
 env.bak/
 venv.bak/
 
+# Backend environment files with API keys
+backend/env
+backend/.env
+
 # Spyder project settings
 .spyderproject
 .spyproject
@@ -200,6 +204,16 @@ cython_debug/
 #.idea/
 
 backend/.langgraph_apibackend/vendor/
+
+# User data and knowledge base
+data/
+
+# Temporary uploaded files  
+/tmp/
+
+# Test artifacts
+frontend/test-results/
+frontend/playwright-report/
 
 #Claude.md
 CLAUDE.local.md

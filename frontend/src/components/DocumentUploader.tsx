@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { AudioRecordingError } from "@/types/langgraph";
 
 type DocumentUploaderProps = {
   userId?: string;
@@ -45,8 +46,8 @@ export function DocumentUploader({
       const data: { inserted: number; ids: string[] } = await res.json();
       setIds(data.ids);
       onSuccess?.(data.ids);
-    } catch (e: any) {
-      const msg = e?.message || "Failed to upload document";
+    } catch (e: unknown) {
+      const msg = (e as AudioRecordingError)?.message || "Failed to upload document";
       setError(msg);
       onError?.(msg);
     } finally {

@@ -7,10 +7,6 @@ test.describe('Graph Visualization Page', () => {
     // Wait for page to load
     await expect(page.locator('h2:has-text("Graph")')).toBeVisible();
     
-    // Check if Cytoscape component is present
-    const graphContainer = page.locator('[data-cy="cytoscape"]').or(page.locator('#cy')).or(page.locator('.cytoscape-container'));
-    
-    // If graph data exists, Cytoscape should render
     // Wait a bit for potential graph rendering
     await page.waitForTimeout(2000);
     
