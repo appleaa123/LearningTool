@@ -204,3 +204,129 @@ git submodule add https://github.com/Open-Deep-Research/open_deep_research vendo
 1. Test frontend-backend integration for agent functionality
 2. Document LightRAG issue and potential fixes
 3. Consider temporary bypass for ingestion or LightRAG version update
+
+---
+
+## 🔬 OPTIONAL DEEP RESEARCH (Future Enhancement)
+
+### Backend Implementation Plan for User-Controlled Research
+
+**Current Architecture Analysis:**
+- LangGraph agent (`src/agent/graph.py`) always executes full research workflow
+- No conditional logic to skip research nodes based on user preference
+- Missing research mode configuration in agent state schema
+
+**Recommended Approach: Add Conditional Research Flow**
+
+#### Phase 1: Agent State Configuration (1 hour)
+1. **Update State Schema** (`src/agent/state.py`)
+   - Add `research_mode: bool` to `OverallState` interface
+   - Add `research_enabled: Optional[bool]` to configuration schema
+   - Ensure backward compatibility with existing state
+
+```python
+# New state fields
+@dataclass
+class OverallState:
+    # ... existing fields
+    research_mode: bool = True  # Default to current behavior
+    # ... rest of state
+```
+
+2. **Configuration Schema Updates** (`src/agent/configuration.py`)
+   - Add research mode configuration option
+   - Allow runtime override of research behavior
+   - Maintain existing defaults for backward compatibility
+
+#### Phase 2: Conditional Graph Logic (2 hours)
+3. **Modify Graph Entry Point** (`src/agent/graph.py:48-82`)
+   - Add research mode check in `generate_query` node
+   - Create fallback path for local-only responses
+   - Preserve existing research workflow when enabled
+
+```python
+def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerationState:
+    """Generate search queries only if research mode is enabled."""
+    configurable = Configuration.from_runnable_config(config)
+    
+    # Check if research is disabled
+    if not state.get("research_mode", True):
+        return {"search_query": [], "skip_research": True}
+    
+    # Existing research logic...
+```
+
+4. **Add Routing Logic** (`src/agent/graph.py:85-93`)
+   - Modify `continue_to_web_research` to handle research-disabled mode
+   - Route directly to local response when research is off
+   - Maintain research flow when enabled
+
+```python
+def continue_to_web_research(state: QueryGenerationState):
+    """Route based on research mode configuration."""
+    if state.get("skip_research", False):
+        return "local_response"  # New node for local-only responses
+    
+    # Existing research routing...
+```
+
+#### Phase 3: Local Response Handler (1-2 hours)
+5. **Create Local Response Node**
+   - New node that uses only LightRAG for knowledge retrieval
+   - Bypass web research, reflection, and complex research workflow
+   - Format response consistently with research mode output
+
+```python
+def local_response(state: OverallState, config: RunnableConfig):
+    """Handle local-only responses using LightRAG knowledge base."""
+    from src.services.lightrag_store import LightRAGStore
+    
+    # Extract user_id and question from state
+    question = get_research_topic(state["messages"])
+    
+    # Use LightRAG for local knowledge retrieval
+    store = LightRAGStore("default")  # Use configured user_id
+    local_answer = await store.query(question)
+    
+    return {
+        "messages": [AIMessage(content=local_answer)],
+        "sources_gathered": [],  # No web sources for local responses
+    }
+```
+
+6. **Update Graph Builder** (`src/agent/graph.py:260-284`)
+   - Add new local_response node to graph
+   - Update routing logic to handle research mode
+   - Ensure proper edge connections for both paths
+
+#### Phase 4: Integration Points (1 hour)
+7. **LangGraph Configuration Integration**
+   - Accept research mode from frontend streaming configuration
+   - Pass research preference through configurable parameters
+   - Maintain compatibility with existing `/assistant/ask` endpoint
+
+8. **Testing & Validation**
+   - Test both research-enabled and research-disabled flows
+   - Verify proper routing and response formatting
+   - Ensure no breaking changes to existing functionality
+
+**Files to Modify:**
+- `backend/src/agent/state.py` - Add research mode to state schema
+- `backend/src/agent/configuration.py` - Add research configuration option
+- `backend/src/agent/graph.py` - Add conditional logic and local response node
+- `backend/src/services/lightrag_store.py` - Ensure async query method compatibility
+
+**Enhanced REST API Support:**
+- The existing `/assistant/ask` endpoint already supports `deep_research: bool` parameter
+- This implementation will make the LangGraph streaming approach consistent
+- Both REST and streaming approaches will respect user research preferences
+
+**Estimated Development Time:** 4-6 hours
+**Priority:** Medium (improves user experience and system flexibility)
+**Dependencies:** Frontend research toggle UI for full user control
+
+**Performance Benefits:**
+- ✅ Faster responses when research is disabled (local-only queries)
+- ✅ Reduced API costs (no Tavily/web search API calls for local queries)
+- ✅ Lower resource usage (simpler processing pipeline)
+- ✅ Better user control over response time vs depth trade-offs

@@ -158,5 +158,89 @@
 
 ---
 
+## 🔬 OPTIONAL DEEP RESEARCH (Future Enhancement)
+
+### Frontend Implementation Plan for User-Controlled Research
+
+**Current Issue Analysis:**
+- Frontend uses LangGraph streaming (`useStream`) that always triggers research
+- No UI controls for users to enable/disable research mode
+- Missing connection between user intent and research activation
+
+**Recommended Approach: Add Research Toggle to Frontend**
+
+#### Phase 1: UI Components (1-2 hours)
+1. **Update InputForm Component** (`src/components/InputForm.tsx`)
+   - Add research toggle button alongside effort/model selectors
+   - Create consistent styling with existing controls
+   - Add proper TypeScript interfaces for research state
+
+```typescript
+// New interface additions
+interface InputFormProps {
+  onSubmit: (inputValue: string, researchEnabled: boolean) => void;
+  // ... existing props
+}
+
+// New state management
+const [researchEnabled, setResearchEnabled] = useState(false);
+```
+
+2. **Add Research Toggle UI**
+   - Toggle button with clear "Research Mode" label
+   - Visual indicators (different colors/icons for on/off states)
+   - Tooltip explaining research vs local-only mode
+
+#### Phase 2: State Management (1 hour)
+3. **Update App.tsx Logic**
+   - Modify `handleSubmit` function to accept research preference
+   - Pass research configuration through LangGraph streaming config
+   - Preserve user research preferences in component state
+
+```typescript
+// Updated submit handler
+const handleSubmit = useCallback(
+  (submittedInputValue: string, researchEnabled: boolean) => {
+    // Pass research config to LangGraph
+    (thread.submit as (config: Record<string, unknown>) => void)({
+      messages: newMessages,
+      configurable: {
+        research_mode: researchEnabled,
+        // ... existing config
+      },
+    });
+  },
+  [thread]
+);
+```
+
+#### Phase 3: User Experience Enhancements (2 hours)
+4. **Smart Research Suggestions**
+   - Detect research-worthy queries (keywords: "latest", "current", "recent", "news")
+   - Show suggestion popup: "This question might benefit from research mode"
+   - One-click enable research for detected queries
+
+5. **Research Mode Indicators**
+   - Clear visual feedback when research is active/inactive
+   - Different loading states for local vs research queries
+   - Timeline events only show when research is enabled
+
+6. **Persistence & UX**
+   - Remember user's research preference across sessions
+   - Keyboard shortcut (Ctrl+R) to toggle research mode
+   - Clear messaging about response time differences
+
+**Files to Modify:**
+- `frontend/src/components/InputForm.tsx` - Add research toggle UI
+- `frontend/src/App.tsx` - Update submit handler and state management
+- `frontend/src/types/langgraph.ts` - Add research mode interfaces
+- `frontend/src/components/ChatMessagesView.tsx` - Update research indicators
+
+**Estimated Development Time:** 4-5 hours
+**Priority:** Medium (enhances user control over system behavior)
+**Dependencies:** Requires backend research mode configuration support
+
+---
+
 **Status**: 🚀 **PRODUCTION DEPLOYMENT READY**  
 **Next Action**: Execute deployment to production environment
