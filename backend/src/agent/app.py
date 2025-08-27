@@ -80,11 +80,13 @@ try:
     from src.routers.assistant import router as assistant_router
     from src.routers.knowledge import router as knowledge_router
     from src.routers.notebooks import router as notebooks_router
+    from src.routers.topics import router as topics_router
 
     app.include_router(ingest_router)
     app.include_router(assistant_router)
     app.include_router(knowledge_router)
     app.include_router(notebooks_router)
+    app.include_router(topics_router)
     
     # Simple configuration probe for frontend: which providers are enabled by env
     @app.get("/config/providers")

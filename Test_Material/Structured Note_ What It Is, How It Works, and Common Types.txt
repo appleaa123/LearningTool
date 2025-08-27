@@ -1,0 +1,94 @@
+﻿Structured Note: What It Is, How It Works, and Common Types
+
+
+Definition
+A structured note is a hybrid financial instrument that combines a fixed-income security with one or more derivative components. 
+
+
+What Is a Structured Note?
+A structured note is a debt obligation that also contains an embedded derivative component that adjusts the security's risk-return profile. The return performance of a structured note will track both the underlying debt obligation and the derivative embedded within it. This type of note is a hybrid security that attempts to change its profile by including additional modifying structures, thus increasing the bond's potential return.
+
+
+Key Takeaways
+A structured note is a debt obligation that also contains an embedded derivative component that adjusts the security's risk-return profile.
+The return on a structured note is linked to the performance of an underlying asset, group of assets, or index.
+The flexibility of structured notes allows them to offer a wide variety of potential payoffs that are difficult to find elsewhere.
+Structured notes are complicated financial products that suffer from market risk, low liquidity, and default risk.
+Understanding Structured Notes
+A structured note is a debt security issued by financial institutions. Its return is based on equity indexes, single equity, a basket of equities, interest rates, commodities, or foreign currencies. The performance of a structured note is linked to the return on an underlying asset, group of assets, or index.
+
+
+All structured notes have two underlying pieces: a bond component and a derivative component. The bond portion of the note takes up most of the investment and provides principal protection. The rest of the investment not allocated to the bond is used to purchase a derivative product and provides upside potential to investors. The derivative portion is used to provide exposure to any asset class.1
+
+
+An example of a structured note would be a five-year bond coupled with a futures contract on almonds. Common structured notes include principal-protected notes, reverse convertible notes, and leveraged notes.
+
+
+Advantages and Disadvantages of Structured Notes
+Advantages
+The flexibility of structured notes allows them to provide a wide variety of potential payoffs that are difficult to find elsewhere. They may offer increased or decreased upside potential, downside risk, and overall volatility. For instance, they may consist of a fairly stable bond coupled with out-of-the-money call options on risky stocks. This combination limits losses while creating the potential for large gains. But it may lead to repeated small losses if the call options are too far out of the money.
+
+
+A structured note offers limited losses in exchange for limited gains compared with other assets. For instance, the structured note might be linked to the S&P 500 with gains capped at 10% and maximum losses set at 15%.
+
+
+Structured notes can also be used to make unconventional bets on specific outcomes. A structured note might depend on stock market volatility, as measured by the VIX. A different structured note based on bull put spreads might offer significant gains even in flat markets. However, such a note would have high downside risk when the stock market has small losses.
+
+
+Disadvantages
+Derivatives are complicated even when they are not combined with other financial products. For instance, commodity futures contracts require the investor to understand their full implications. That makes a structured note a very complex product, as it is both a debt instrument and a derivative instrument. Knowing how to calculate a structured note's expected payoffs is vital.
+
+
+Market risk is prevalent in all investments, and structured notes have pitfalls. Some structured notes have principal protection. For the ones that don't, it is possible to lose some or all the principal.2
+U.S. Securities and Exchange Commission. "Structured Notes with Principal Protection: Note the Terms of Your Investment."
+
+
+ This risk arises when the underlying derivative becomes volatile. That can happen with equity prices, interest rates, commodity prices, and foreign exchange rates.
+
+
+Low liquidity is often a problem for holders of structured notes. The flexibility of structured notes makes it difficult for large markets to develop particular notes. That makes it very hard to buy or sell a structured note on a secondary market. Investors who want a structured note should expect to hold the instrument to its maturity date. Thus, great care must be taken when investing in a structured note.
+
+
+Structured notes also suffer from higher default risk than their underlying debt obligations and derivatives. If the issuer of the note defaults, the entire value of the investment could be lost.1 Investors can reduce this default risk by buying debt and derivatives directly. For example, it is possible to buy U.S. Treasury bonds from the government and buy options separately. That would protect most of the funds from default risk.
+
+
+Pros
+Flexible
+Offer variety of potential payoffs
+Limited losses for limited gains
+Can be used for unconventional bets on certain outcomes
+
+
+Cons
+Complicated assets on their own
+Potential to lose part or all the principal
+Low liquidity
+Hard to trade on the secondary market
+Higher default risk than underlying debt obligations and derivatives
+
+
+Types of Structured Notes
+The following are several common types of structured notes:
+
+
+Absolute notes: These types of structured notes give investors the opportunity to benefit from the upside of an underlying asset while limiting the exposure to any downside risk.
+Digital notes: These notes provide investors with a single coupon payment once the note matures. Digital note terms are shorter than income notes.
+Growth notes: Investors can reap the benefits of any upside associated with the underlying asset of a growth note, such as any appreciation in the price of a stock or ETF.
+Income notes: These structured notes are just like traditional bonds because of the income they pay from coupon payments. They offer fixed terms of at least three months. Any downside risk associated with income notes comes from the way they are structured.
+Are Structured Notes FDIC Insured?
+No. Structured Notes are not typically Federal Deposit Insurance Corporation (FDIC) protected. They are regarded as securities products and are therefore subject tot he creditworthiness of the issuing institution.
+
+
+Who Invests in Structured Notes?
+Structured notes are considered complicated investments because of the intricacies involved. Since they involve both a debt obligation and a derivative, it's important for investors to understand how these two elements work. Having said that, investment banks typically create structured notes for more sophisticated investors like hedge funds and institutional investors.
+
+
+Can You Lose Money in a Structured Note?
+That depends on the type of structured note. Specific notes offer some principal protection. If you invest in a note that doesn't have this protection, you could lose some or all of your principal.
+
+
+The Bottom Line
+Structured notes are advanced financial instruments that combine elements of debt securities with derivative components. While they offer customized risk-return profiles that can help you protect your principal and generate income, they are often very complex and higher risk than more traditional parts of a portfolio.
+
+
+These products typically suit sophisticated investors with specific needs rather than the typical retail investor.

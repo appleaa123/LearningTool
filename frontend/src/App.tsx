@@ -5,13 +5,18 @@ import { ProcessedEvent } from "@/components/ActivityTimeline";
 import { LangGraphEvent, ProviderAvailability } from "@/types/langgraph";
 import { WelcomeScreen } from "@/components/WelcomeScreen";
 import { ChatMessagesView } from "@/components/ChatMessagesView";
+import { KnowledgeFeed } from "@/components/KnowledgeFeed";
+import { TopicSuggestions } from "@/components/TopicSuggestions";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { MediaUploader } from "@/components/MediaUploader";
 import { AudioRecorder } from "@/components/AudioRecorder";
 import { DocumentUploader } from "@/components/DocumentUploader";
 import { NotebookSelector } from "@/components/NotebookSelector";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { MessageCircle, Grid, Target, Plus } from 'lucide-react';
+import { topicService } from "@/services/topicService";
 
 export default function App() {
   const [processedEventsTimeline, setProcessedEventsTimeline] = useState<
@@ -27,6 +32,15 @@ export default function App() {
   const [lastIngestIds, setLastIngestIds] = useState<string[] | null>(null);
   const [availableProviders, setAvailableProviders] = useState<ProviderAvailability>({});
   const [notebookId, setNotebookId] = useState<number | null>(null);
+  
+  // Navigation and view state
+  const [activeView, setActiveView] = useState<'chat' | 'feed' | 'topics'>('chat');
+  const [pendingTopicsCount, setPendingTopicsCount] = useState(0);
+  const [recentFeedItemsCount, setRecentFeedItemsCount] = useState(0);
+  const [hasDeepResearchContent, setHasDeepResearchContent] = useState(false);
+  
+  // User ID for consistent data access (derived from thread or default)
+  const userId = "anon"; // Default user - in production this would come from authentication
   const thread = useStream<{
     messages: Message[];
     initial_search_query_count: number;
@@ -110,6 +124,29 @@ export default function App() {
     }).catch(() => {});
   }, []);
 
+  // Update topic and feed counts periodically
+  useEffect(() => {
+    const updateCounts = async () => {
+      try {
+        // Get pending topics count
+        const topics = await topicService.getTopicSuggestions(userId, notebookId ?? undefined, 50);
+        setPendingTopicsCount(topics.filter(t => t.status === 'pending').length);
+        
+        // Update deep research content indicator
+        const hasResearch = topics.some(t => t.status === 'accepted' || t.status === 'researched');
+        setHasDeepResearchContent(hasResearch);
+      } catch (error) {
+        console.warn('Failed to update counts:', error);
+      }
+    };
+
+    updateCounts();
+    // Update every 30 seconds
+    const interval = setInterval(updateCounts, 30000);
+    
+    return () => clearInterval(interval);
+  }, [userId, notebookId]);
+
   useEffect(() => {
     if (scrollAreaRef.current) {
       const scrollViewport = scrollAreaRef.current.querySelector(
@@ -173,50 +210,208 @@ export default function App() {
     window.location.reload();
   }, [thread]);
 
+  // Topic management handlers
+  const handleAcceptTopic = useCallback(async (topicId: number) => {
+    try {
+      await topicService.acceptTopic(topicId, userId, notebookId ?? undefined);
+      // Refresh pending topics count
+      const topics = await topicService.getTopicSuggestions(userId, notebookId ?? undefined, 10);
+      setPendingTopicsCount(topics.filter(t => t.status === 'pending').length);
+      
+      // Show notification that research started
+      console.log('Research started for topic:', topicId);
+    } catch (error) {
+      console.error('Failed to accept topic:', error);
+    }
+  }, [userId, notebookId]);
+
+  const handleRejectTopic = useCallback(async (topicId: number) => {
+    try {
+      await topicService.rejectTopic(topicId, userId, notebookId ?? undefined);
+      // Refresh pending topics count
+      const topics = await topicService.getTopicSuggestions(userId, notebookId ?? undefined, 10);
+      setPendingTopicsCount(topics.filter(t => t.status === 'pending').length);
+    } catch (error) {
+      console.error('Failed to reject topic:', error);
+    }
+  }, [userId, notebookId]);
+
+  const handleTopicClick = useCallback((topicId: number) => {
+    // Navigate to topics view and highlight specific topic
+    setActiveView('topics');
+    console.log('Navigate to topic:', topicId);
+  }, []);
+
   return (
     <div className="flex h-screen bg-neutral-800 text-neutral-100 font-sans antialiased">
-      <main className="h-full w-full max-w-4xl mx-auto">
-          <div className="p-2 flex justify-between items-center gap-2">
-            <NotebookSelector onChange={setNotebookId} />
-            <Button variant="secondary" onClick={() => setIsKnowledgeDrawerOpen(true)}>
-              Add to Knowledge
-            </Button>
-          </div>
-          {thread.messages.length === 0 ? (
-            <ErrorBoundary>
-              <WelcomeScreen
-                handleSubmit={handleSubmit}
-                isLoading={thread.isLoading}
-                onCancel={handleCancel}
-              />
-            </ErrorBoundary>
-          ) : error ? (
-            <div className="flex flex-col items-center justify-center h-full">
-              <div className="flex flex-col items-center justify-center gap-4">
-                <h1 className="text-2xl text-red-400 font-bold">Error</h1>
-                <p className="text-red-400">{JSON.stringify(error)}</p>
+      <main className="h-full w-full max-w-6xl mx-auto flex flex-col">
+        {/* Enhanced Navigation Bar */}
+        <div className="border-b border-neutral-700 bg-neutral-900/50 backdrop-blur">
+          <div className="p-3 flex items-center justify-between">
+            {/* Left side - Navigation tabs */}
+            <div className="flex items-center gap-1">
+              <Button
+                variant={activeView === 'chat' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setActiveView('chat')}
+                className="flex items-center gap-2"
+              >
+                <MessageCircle size={16} />
+                Chat
+              </Button>
+              
+              <Button
+                variant={activeView === 'feed' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setActiveView('feed')}
+                className="flex items-center gap-2"
+              >
+                <Grid size={16} />
+                Knowledge Feed
+                {recentFeedItemsCount > 0 && (
+                  <Badge variant="secondary" className="ml-1 text-xs">
+                    {recentFeedItemsCount}
+                  </Badge>
+                )}
+              </Button>
 
-                <Button
-                  variant="destructive"
-                  onClick={() => window.location.reload()}
-                >
-                  Retry
-                </Button>
-              </div>
+              <Button
+                variant={activeView === 'topics' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setActiveView('topics')}
+                className="flex items-center gap-2"
+              >
+                <Target size={16} />
+                Research Topics
+                {pendingTopicsCount > 0 && (
+                  <Badge variant="destructive" className="ml-1 text-xs">
+                    {pendingTopicsCount}
+                  </Badge>
+                )}
+              </Button>
             </div>
-          ) : (
+
+            {/* Middle - Notebook selector */}
+            <div className="flex-1 flex justify-center">
+              <NotebookSelector onChange={setNotebookId} />
+            </div>
+
+            {/* Right side - Actions and status */}
+            <div className="flex items-center gap-3">
+              {/* Content source indicator */}
+              <Badge 
+                variant="outline" 
+                className={`text-xs ${
+                  hasDeepResearchContent ? 'border-blue-500 text-blue-300' : 'border-gray-500'
+                }`}
+              >
+                <div className={`w-2 h-2 rounded-full mr-1 ${
+                  hasDeepResearchContent ? 'bg-blue-500' : 'bg-gray-400'
+                }`} />
+                {hasDeepResearchContent ? 'Deep Research Available' : 'Local Knowledge Only'}
+              </Badge>
+              
+              <Button 
+                variant="secondary" 
+                size="sm"
+                onClick={() => setIsKnowledgeDrawerOpen(true)}
+                className="flex items-center gap-2"
+              >
+                <Plus size={16} />
+                Add Knowledge
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content Area with View Switching */}
+        <div className="flex-1 overflow-hidden">
+          {activeView === 'chat' && (
+            <>
+              {thread.messages.length === 0 ? (
+                <ErrorBoundary>
+                  <div className="h-full flex items-center justify-center">
+                    <WelcomeScreen
+                      handleSubmit={handleSubmit}
+                      isLoading={thread.isLoading}
+                      onCancel={handleCancel}
+                    />
+                  </div>
+                </ErrorBoundary>
+              ) : error ? (
+                <div className="flex flex-col items-center justify-center h-full">
+                  <div className="flex flex-col items-center justify-center gap-4">
+                    <h1 className="text-2xl text-red-400 font-bold">Error</h1>
+                    <p className="text-red-400">{JSON.stringify(error)}</p>
+                    <Button
+                      variant="destructive"
+                      onClick={() => window.location.reload()}
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <ErrorBoundary>
+                  <div className="h-full flex flex-col">
+                    {hasDeepResearchContent && (
+                      <div className="mx-4 mt-4 p-3 bg-blue-950/30 border border-blue-800 rounded-lg">
+                        <p className="text-blue-300 text-sm">
+                          💡 Your knowledge base includes deep research results. Ask questions to leverage both uploaded content and researched insights.
+                        </p>
+                      </div>
+                    )}
+                    <ChatMessagesView
+                      messages={thread.messages}
+                      isLoading={thread.isLoading}
+                      scrollAreaRef={scrollAreaRef}
+                      onSubmit={handleSubmit}
+                      onCancel={handleCancel}
+                      liveActivityEvents={processedEventsTimeline}
+                      historicalActivities={historicalActivities}
+                    />
+                  </div>
+                </ErrorBoundary>
+              )}
+            </>
+          )}
+
+          {activeView === 'feed' && (
             <ErrorBoundary>
-              <ChatMessagesView
-                messages={thread.messages}
-                isLoading={thread.isLoading}
-                scrollAreaRef={scrollAreaRef}
-                onSubmit={handleSubmit}
-                onCancel={handleCancel}
-                liveActivityEvents={processedEventsTimeline}
-                historicalActivities={historicalActivities}
-              />
+              <div className="h-full overflow-auto">
+                <KnowledgeFeed
+                  userId={userId}
+                  notebookId={notebookId ?? undefined}
+                  className="px-4 py-6"
+                  showFilters={true}
+                  onTopicClick={handleTopicClick}
+                />
+              </div>
             </ErrorBoundary>
           )}
+
+          {activeView === 'topics' && (
+            <ErrorBoundary>
+              <div className="h-full overflow-auto">
+                <div className="max-w-4xl mx-auto px-4 py-6">
+                  <div className="mb-6">
+                    <h1 className="text-3xl font-bold mb-2">Research Topics</h1>
+                    <p className="text-muted-foreground">
+                      Manage your research topics and view suggestions from uploaded content.
+                    </p>
+                  </div>
+                  
+                  <TopicSuggestions
+                    topics={[]} // This will be populated by the component's own state
+                    onAcceptTopic={handleAcceptTopic}
+                    onRejectTopic={handleRejectTopic}
+                    loading={false}
+                  />
+                </div>
+              </div>
+            </ErrorBoundary>
+          )}
+        </div>
           {isKnowledgeDrawerOpen && (
             <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setIsKnowledgeDrawerOpen(false)} />
           )}

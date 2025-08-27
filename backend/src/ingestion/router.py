@@ -30,9 +30,44 @@ from src.ingestion.transformations import run_transformations_in_background
 from sqlmodel import Session, select
 from src.services.db import get_session
 from src.services.models import Notebook
+from src.services.topic_suggestion import TopicSuggestionService
 
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
+
+
+async def _generate_topics_in_background(
+    user_id: str,
+    notebook_id: int, 
+    chunks: list,
+    source_type: str,
+    source_filename: str | None = None
+) -> None:
+    """Generate topic suggestions in the background after content ingestion."""
+    try:
+        # Use session scope context manager for background processing
+        from src.services.db import session_scope
+        
+        with session_scope() as session:
+            service = TopicSuggestionService(session)
+            
+            # Combine all chunk text for topic generation
+            combined_content = "\n\n".join(chunk.text for chunk in chunks)
+            
+            # Generate topics (this is async and may take a few seconds)
+            await service.generate_topics_for_content(
+                content=combined_content,
+                source_type=source_type,
+                notebook_id=notebook_id,
+                source_filename=source_filename,
+                max_topics=3  # Default max, preferences will override if needed
+            )
+            
+    except Exception as e:
+        # Log error but don't fail the ingestion
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Topic generation failed for notebook {notebook_id}: {e}")
 
 
 def _resolve_notebook_id(session: Session, user_id: str, notebook_id: int | None) -> int:
@@ -55,13 +90,26 @@ async def ingest_text_endpoint(
     text: str = Form(...),
     user_id: str = Form("anon"),
     notebook_id: int | None = Form(None),
+    suggest_topics: bool = Form(False),
     session: Session = Depends(get_session),
 ):
     nid = _resolve_notebook_id(session, user_id, notebook_id)
     chunk = KnowledgeChunk(text=text, source_type="text", metadata={"ingest": "text"})
     ids = await ingest_chunks([chunk], user_id, notebook_id=nid)
+    
     # Background transformations linked to notebook
     run_transformations_in_background(background_tasks, user_id=user_id, notebook_id=nid, chunk_ids=ids, chunk_texts=[chunk.text])
+    
+    # Background topic generation if requested
+    if suggest_topics:
+        background_tasks.add_task(
+            _generate_topics_in_background,
+            user_id=user_id,
+            notebook_id=nid,
+            chunks=[chunk],
+            source_type="text"
+        )
+    
     return IngestResponse(inserted=len(ids), ids=ids)
 
 
@@ -157,6 +205,7 @@ async def ingest_document_endpoint(
     user_id: str = Form("anon"),
     notebook_id: int | None = Form(None),
     document_provider: str | None = Form(None),
+    suggest_topics: bool = Form(False),
     session: Session = Depends(get_session),
 ):
     defaults = get_ingestion_defaults()
@@ -176,6 +225,18 @@ async def ingest_document_endpoint(
 
     # Schedule background content transformations (persisted per notebook/chunk)
     run_transformations_in_background(background_tasks, user_id=user_id, notebook_id=nid, chunk_ids=ids, chunk_texts=[c.text for c in chunks])
+    
+    # Background topic generation if requested
+    if suggest_topics:
+        background_tasks.add_task(
+            _generate_topics_in_background,
+            user_id=user_id,
+            notebook_id=nid,
+            chunks=chunks,
+            source_type="document",
+            source_filename=file.filename
+        )
+    
     return IngestResponse(inserted=len(ids), ids=ids)
 
 
@@ -186,6 +247,7 @@ async def ingest_image_endpoint(
     user_id: str = Form("anon"),
     notebook_id: int | None = Form(None),
     vision_provider: str | None = Form(None),
+    suggest_topics: bool = Form(False),
     session: Session = Depends(get_session),
 ):
     defaults = get_ingestion_defaults()
@@ -204,6 +266,18 @@ async def ingest_image_endpoint(
         raise HTTPException(status_code=400, detail=f"Failed to ingest image: {exc}")
 
     run_transformations_in_background(background_tasks, user_id=user_id, notebook_id=nid, chunk_ids=ids, chunk_texts=[c.text for c in chunks])
+    
+    # Background topic generation if requested
+    if suggest_topics:
+        background_tasks.add_task(
+            _generate_topics_in_background,
+            user_id=user_id,
+            notebook_id=nid,
+            chunks=chunks,
+            source_type="image",
+            source_filename=file.filename
+        )
+    
     return IngestResponse(inserted=len(ids), ids=ids)
 
 
