@@ -317,3 +317,273 @@ Generated: Chunk (ID: 14), Summary (ID: 15), Q&A (ID: 16), Flashcard (ID: 17)
 The **Facebook-style knowledge newsfeed and optional research system is fully implemented and exceeds all performance requirements**. The system successfully processes content, generates intelligent feed items, provides comprehensive search capabilities, and maintains excellent user experience with sub-second response times.
 
 **Ready for production use** with comprehensive functionality and robust error handling.
+
+## Bugs and Issues
+**Execution Date**: August 27, 2025  
+**Research Topics**
+- When click on "+ Add Knowledge" button, after uploading knowledge files:
+ - It does trigger Generating topic suggestions and shwo suggested topics. When I click "not interested", the application actually starts researching the topic instead of removing it from the suggestion. The opposite happens when I click research button, it ignores the topics and removes from suggested topics. 
+ - Research did not finish after the app running on research for a short period of time and the research topics are not visible anymore and no results returns.
+ - Research topics tab does not have any suggested topics which was previously recommended in Add Knowledge. Also, it does not show what's currently recommended. Rather, it only shows the context text without any topics listed.
+
+**Chat**
+- The chat function from the app is broken or at least the experience is not fully functional
+ - When I ask questions, click Search, there's nothing returned in the chat. It runs for a while, then nothing returns as the answer nor showing any result or error message at all, regardless after adjusting Model and Effort.
+
+**Knowledge Feed**
+- Knowledge Feed is not working properly. Only has basic experience loads without a useable experience.
+ - All feed cards shows zero content. The front end elements like feed cards, type of cards shows correctly, but no was generated and shown in cards. No research Summary, Flashcard, Chunk, Deep Search Results available. 
+
+**Experience and UI**
+- The application frontend does not automatically adjust based on screen specs. It cuts off when showing on smaller screen.
+- Content and background are using the same or similar colour cause usability issues. It fails usability test because some content are not visible from the backgrounds. For example, Local Knowledge Only on the home page uses black word colour but the background is also black, thus there's no content visibile. Another example is the content type pills in Knowledge Feed tab.
+
+---
+
+## 🔧 VERIFIED BUG FIXES & RESOLUTIONS
+**Analysis Date**: August 27, 2025  
+**Status**: Code Analysis Complete - Targeted Fixes Identified
+
+### ✅ **CONFIRMED CRITICAL BUGS** (Verified by Code Analysis)
+
+#### 1. **Feed Content Empty** - **ROOT CAUSE IDENTIFIED**
+**Issue**: All feed cards show zero content despite proper structure
+**Root Cause**: Data integration gap between frontend and backend
+- `KnowledgeFeed.tsx:83` - Only calls `feedService.getFeed()` (metadata only)
+- Missing calls to `feedService.getFeedItemContent()` for actual content
+- Backend provides content via separate `/knowledge/feed/{id}/content` endpoint
+- Frontend components expect enriched data but receive basic metadata
+
+**Technical Fix Required**:
+```typescript
+// Need to add content enrichment in KnowledgeFeed component
+const enrichedItems = await Promise.all(
+  items.map(item => feedService.getFeedItemContent(item.id, userId))
+);
+```
+
+#### 2. **Topics View Empty** - **ROOT CAUSE IDENTIFIED**  
+**Issue**: Research Topics tab shows no content
+**Root Cause**: Hardcoded empty array with no data loading mechanism
+- `App.tsx:405` - Topics prop hardcoded to `[]`
+- `TopicSuggestions.tsx` - No useEffect hook to fetch its own data
+- Component relies entirely on props but receives empty array
+
+**Technical Fix Required**:
+```typescript
+// Either fix in App.tsx or add data loading to TopicSuggestions
+useEffect(() => {
+  const loadTopics = async () => {
+    const topics = await topicService.getTopicSuggestions(userId, notebookId);
+    setTopics(topics);
+  };
+  loadTopics();
+}, [userId, notebookId]);
+```
+
+#### 3. **Visual Contrast Issues** - **ROOT CAUSE IDENTIFIED**
+**Issue**: "Local Knowledge Only" text invisible on dark background
+**Root Cause**: Missing explicit text color in badge component
+- `App.tsx:304` - Badge only sets `border-gray-500` but no text color
+- Text inherits default colors that may not contrast properly
+
+**Technical Fix Required**:
+```typescript
+className={`text-xs ${
+  hasDeepResearchContent 
+    ? 'border-blue-500 text-blue-300' 
+    : 'border-gray-500 text-gray-300'  // Add explicit text color
+}`}
+```
+
+### ⚠️ **NEEDS RUNTIME VERIFICATION** (Code Structure Correct)
+
+#### 4. **Topic Button Logic Reversal**
+**Analysis**: Frontend code is correctly wired
+- "✅ Research This" → `handleAcceptTopic()` → `/topics/suggestions/{id}/accept`
+- "❌ Not Interested" → `handleRejectTopic()` → `/topics/suggestions/{id}/reject`
+**Status**: Need to verify backend API behavior matches expected logic
+
+#### 5. **Chat Functionality**  
+**Analysis**: Frontend architecture is sound
+- `ChatMessagesView.tsx` has proper `InputForm` integration
+- `handleSubmit` function correctly configured with LangGraph
+- Input interface, model selection, and form submission all present
+**Status**: Need to verify LangGraph API endpoint configuration and responses
+
+### 🎯 **RESOLUTION PRIORITY**
+
+**Phase 1 - Data Integration (Critical)**
+1. Fix feed content loading - Add `getFeedItemContent()` calls
+2. Fix topics view data loading - Implement proper data fetching
+
+**Phase 2 - UI/UX Polish (High)**  
+3. Fix visual contrast issues - Add proper text colors
+4. Add responsive design improvements
+
+**Phase 3 - Runtime Verification (Medium)**
+5. Test topic accept/reject API behavior
+6. Test chat functionality with different models
+
+### 📊 **EXPECTED OUTCOMES**
+
+After implementing these fixes:
+- ✅ Feed will display rich content (summaries, flashcards, Q&A, chunks)
+- ✅ Topics view will show actual pending research suggestions  
+- ✅ All text will be properly visible with good contrast
+- ✅ Complete upload → topic generation → research → feed workflow
+- ✅ Robust error handling and loading states throughout
+
+### 🔍 **VERIFICATION METHODOLOGY**
+
+This analysis was conducted through:
+1. **Static Code Analysis** - Examined actual component implementations
+2. **Data Flow Tracing** - Followed API calls from frontend to backend
+3. **Service Layer Review** - Verified service method availability and usage
+4. **Component Integration Analysis** - Checked prop passing and state management
+5. **Backend API Mapping** - Confirmed endpoint availability and expected responses
+
+**Key Insight**: The bugs are primarily **integration gaps** rather than architectural flaws. The codebase has excellent structure but missing "plumbing" between components and services.
+
+---
+
+## 🚀 SYSTEMATIC PROJECT LAUNCH & BUG TESTING PLAN
+**Date Added**: August 27, 2025  
+**Purpose**: Test implemented bug fixes and log any remaining issues for future resolution
+
+### **LAUNCH SEQUENCE (With Monitoring)**
+
+#### **Phase 1: Backend Launch & Health Check** (5 mins)
+1. **Launch Backend with Virtual Environment**
+   - Activate virtual env and start FastAPI server
+   - Monitor startup logs for any dependency issues
+   - Test health endpoints: `/health`, `/knowledge/feed/health`, `/topics/health`
+   - Verify database connections and LightRAG initialization
+
+2. **Backend API Validation**
+   - Test basic feed endpoint: `/knowledge/feed?user_id=anon`
+   - Test topic endpoints: `/topics/suggestions?user_id=anon`
+   - Log any startup errors or configuration issues
+
+#### **Phase 2: Frontend Launch & Integration** (5 mins)
+1. **Start Frontend Development Server**
+   - Launch Vite dev server on port 5173/5174
+   - Monitor console for compilation errors
+   - Check that API proxy to backend works properly
+
+2. **Initial Load Testing**
+   - Navigate to application URL
+   - Check browser console for JavaScript errors
+   - Verify basic UI loads without crashes
+
+### **SYSTEMATIC TESTING OF IMPLEMENTED FIXES**
+
+#### **Test 1: Feed Content Fix** (10 mins)
+**What we fixed**: Added content enrichment to feed items in `KnowledgeFeed.tsx`
+**Test Process**:
+1. Navigate to Knowledge Feed tab
+2. Upload some test content (from Test_Material folder)
+3. Wait for processing and feed population
+4. **Verify**: Feed cards now show actual content instead of empty shells
+5. **Log**: Any content loading errors or empty cards
+
+#### **Test 2: Topics View Fix** (10 mins)  
+**What we fixed**: Connected topics view to actual data in `App.tsx`
+**Test Process**:
+1. Navigate to Research Topics tab
+2. Check if topics are loading (should show loading state)
+3. **Verify**: Topics view shows actual suggested topics, not empty state
+4. **Log**: Any data loading errors or continued empty states
+
+#### **Test 3: Topic Accept/Reject Logic** (10 mins)
+**What we need to verify**: Backend API behavior matches frontend expectations
+**Test Process**:
+1. Click "Research This" on a topic
+2. **Expected**: Topic should be accepted and research should start
+3. Click "Not Interested" on another topic  
+4. **Expected**: Topic should be rejected and removed
+5. **Log**: Any reversed logic or unexpected behavior
+
+#### **Test 4: Visual Contrast & Responsive** (5 mins)
+**What we fixed**: Added proper text colors and responsive design in `App.tsx`
+**Test Process**:
+1. Check "Local Knowledge Only" badge visibility
+2. Resize browser window to mobile size
+3. **Verify**: All text is visible, navigation works on small screens with icon-only mode
+4. **Log**: Any visibility issues or layout problems
+
+#### **Test 5: Chat Functionality** (10 mins)
+**What we need to verify**: LangGraph integration and API responses
+**Test Process**:
+1. Navigate to Chat tab
+2. Ask a test question with different model/effort settings
+3. **Verify**: Chat returns responses and doesn't hang
+4. **Log**: Any response failures or timeout issues
+
+### **REAL-TIME LOGGING STRATEGY**
+
+#### **Monitoring Dashboard**
+Track in real-time:
+- **Console Logs**: Both browser and server console output
+- **Network Requests**: API calls and responses
+- **Error Messages**: Any crashes or failures
+- **Performance**: Load times and response speeds
+- **User Experience**: Actual usability of fixed features
+
+#### **Bug Documentation Format**
+For any issues found:
+```
+BUG ID: [Sequential number]
+SEVERITY: [Critical/High/Medium/Low]
+COMPONENT: [Feed/Topics/Chat/UI]
+DESCRIPTION: [What happened vs what was expected]
+REPRODUCTION STEPS: [Exact steps to reproduce]
+CONSOLE ERRORS: [Any error messages]
+STATUS: [New/Confirmed/Needs Investigation]
+```
+
+### **SUCCESS CRITERIA**
+
+#### **Must Work**:
+- ✅ Feed displays actual content (not empty cards)
+- ✅ Topics view shows real suggestions
+- ✅ Visual elements are properly visible
+- ✅ Mobile responsive design works
+
+#### **Should Work**:
+- ✅ Topic accept/reject behaves correctly
+- ✅ Chat functionality returns responses
+- ✅ Performance meets usability standards
+
+#### **Documentation Output**:
+- ✅ Real-time testing log with timestamps
+- ✅ List of verified fixes that work
+- ✅ Documented remaining bugs for future fixing
+- ✅ Updated test results in this document
+
+### **LAUNCH COMMANDS**
+
+#### **Backend Launch**:
+```bash
+cd backend
+source venv/bin/activate
+python -m uvicorn src.agent.app:app --host 127.0.0.1 --port 2024 --reload
+```
+
+#### **Frontend Launch**:
+```bash
+cd frontend
+npm run dev
+```
+
+#### **Testing URLs**:
+- **Frontend**: http://localhost:5173/app/ or http://localhost:5174/app/
+- **Backend Health**: http://127.0.0.1:2024/health
+- **Feed Health**: http://127.0.0.1:2024/knowledge/feed/health
+
+### **ESTIMATED TESTING TIME**: 45 minutes total
+- Launch & setup: 10 mins
+- Systematic testing: 25 mins
+- Bug documentation: 10 mins
+
+This systematic approach ensures complete validation of implemented fixes while building a comprehensive record for any remaining issues.

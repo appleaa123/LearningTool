@@ -39,6 +39,11 @@ export default function App() {
   const [recentFeedItemsCount, setRecentFeedItemsCount] = useState(0);
   const [hasDeepResearchContent, setHasDeepResearchContent] = useState(false);
   
+  // Topics state for Topics view
+  const [topics, setTopics] = useState<any[]>([]);
+  const [topicsLoading, setTopicsLoading] = useState(false);
+  const [topicsError, setTopicsError] = useState<string | null>(null);
+  
   // User ID for consistent data access (derived from thread or default)
   const userId = "anon"; // Default user - in production this would come from authentication
   const thread = useStream<{
@@ -128,15 +133,22 @@ export default function App() {
   useEffect(() => {
     const updateCounts = async () => {
       try {
-        // Get pending topics count
-        const topics = await topicService.getTopicSuggestions(userId, notebookId ?? undefined, 50);
-        setPendingTopicsCount(topics.filter(t => t.status === 'pending').length);
+        setTopicsLoading(true);
+        setTopicsError(null);
+        
+        // Get pending topics count and full topics list
+        const topicsList = await topicService.getTopicSuggestions(userId, notebookId ?? undefined, 50);
+        setPendingTopicsCount(topicsList.filter(t => t.status === 'pending').length);
+        setTopics(topicsList);
         
         // Update deep research content indicator
-        const hasResearch = topics.some(t => t.status === 'accepted' || t.status === 'researched');
+        const hasResearch = topicsList.some(t => t.status === 'accepted' || t.status === 'researched');
         setHasDeepResearchContent(hasResearch);
       } catch (error) {
         console.warn('Failed to update counts:', error);
+        setTopicsError(error instanceof Error ? error.message : 'Failed to load topics');
+      } finally {
+        setTopicsLoading(false);
       }
     };
 
@@ -214,25 +226,29 @@ export default function App() {
   const handleAcceptTopic = useCallback(async (topicId: number) => {
     try {
       await topicService.acceptTopic(topicId, userId, notebookId ?? undefined);
-      // Refresh pending topics count
-      const topics = await topicService.getTopicSuggestions(userId, notebookId ?? undefined, 10);
-      setPendingTopicsCount(topics.filter(t => t.status === 'pending').length);
+      // Refresh pending topics count and topics list
+      const updatedTopics = await topicService.getTopicSuggestions(userId, notebookId ?? undefined, 50);
+      setPendingTopicsCount(updatedTopics.filter(t => t.status === 'pending').length);
+      setTopics(updatedTopics);
       
       // Show notification that research started
       console.log('Research started for topic:', topicId);
     } catch (error) {
       console.error('Failed to accept topic:', error);
+      setTopicsError(error instanceof Error ? error.message : 'Failed to accept topic');
     }
   }, [userId, notebookId]);
 
   const handleRejectTopic = useCallback(async (topicId: number) => {
     try {
       await topicService.rejectTopic(topicId, userId, notebookId ?? undefined);
-      // Refresh pending topics count
-      const topics = await topicService.getTopicSuggestions(userId, notebookId ?? undefined, 10);
-      setPendingTopicsCount(topics.filter(t => t.status === 'pending').length);
+      // Refresh pending topics count and topics list
+      const updatedTopics = await topicService.getTopicSuggestions(userId, notebookId ?? undefined, 50);
+      setPendingTopicsCount(updatedTopics.filter(t => t.status === 'pending').length);
+      setTopics(updatedTopics);
     } catch (error) {
       console.error('Failed to reject topic:', error);
+      setTopicsError(error instanceof Error ? error.message : 'Failed to reject topic');
     }
   }, [userId, notebookId]);
 
@@ -257,7 +273,7 @@ export default function App() {
                 className="flex items-center gap-2"
               >
                 <MessageCircle size={16} />
-                Chat
+                <span className="hidden sm:inline">Chat</span>
               </Button>
               
               <Button
@@ -267,7 +283,7 @@ export default function App() {
                 className="flex items-center gap-2"
               >
                 <Grid size={16} />
-                Knowledge Feed
+                <span className="hidden sm:inline">Knowledge Feed</span>
                 {recentFeedItemsCount > 0 && (
                   <Badge variant="secondary" className="ml-1 text-xs">
                     {recentFeedItemsCount}
@@ -282,7 +298,7 @@ export default function App() {
                 className="flex items-center gap-2"
               >
                 <Target size={16} />
-                Research Topics
+                <span className="hidden sm:inline">Research Topics</span>
                 {pendingTopicsCount > 0 && (
                   <Badge variant="destructive" className="ml-1 text-xs">
                     {pendingTopicsCount}
@@ -302,7 +318,7 @@ export default function App() {
               <Badge 
                 variant="outline" 
                 className={`text-xs ${
-                  hasDeepResearchContent ? 'border-blue-500 text-blue-300' : 'border-gray-500'
+                  hasDeepResearchContent ? 'border-blue-500 text-blue-300' : 'border-gray-500 text-gray-300'
                 }`}
               >
                 <div className={`w-2 h-2 rounded-full mr-1 ${
@@ -318,7 +334,7 @@ export default function App() {
                 className="flex items-center gap-2"
               >
                 <Plus size={16} />
-                Add Knowledge
+                <span className="hidden sm:inline">Add Knowledge</span>
               </Button>
             </div>
           </div>
@@ -402,10 +418,11 @@ export default function App() {
                   </div>
                   
                   <TopicSuggestions
-                    topics={[]} // This will be populated by the component's own state
+                    topics={topics}
                     onAcceptTopic={handleAcceptTopic}
                     onRejectTopic={handleRejectTopic}
-                    loading={false}
+                    loading={topicsLoading}
+                    error={topicsError}
                   />
                 </div>
               </div>
