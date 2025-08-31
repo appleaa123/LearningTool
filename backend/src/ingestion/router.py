@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import secrets
@@ -70,18 +71,22 @@ async def _generate_topics_in_background(
         logger.error(f"Topic generation failed for notebook {notebook_id}: {e}")
 
 
-def _resolve_notebook_id(session: Session, user_id: str, notebook_id: int | None) -> int:
+async def _resolve_notebook_id(session: Session, user_id: str, notebook_id: int | None) -> int:
     if notebook_id is not None:
         return notebook_id
-    # Default notebook per user (create if missing)
-    existing = session.exec(select(Notebook).where(Notebook.user_id == user_id, Notebook.name == "Default")).first()
-    if existing:
-        return int(existing.id)  # type: ignore[arg-type]
-    nb = Notebook(user_id=user_id, name="Default")
-    session.add(nb)
-    session.commit()
-    session.refresh(nb)
-    return int(nb.id)  # type: ignore[arg-type]
+    
+    # Wrap database operations in async thread to prevent blocking
+    def _db_operations():
+        existing = session.exec(select(Notebook).where(Notebook.user_id == user_id, Notebook.name == "Default")).first()
+        if existing:
+            return int(existing.id)  # type: ignore[arg-type]
+        nb = Notebook(user_id=user_id, name="Default")
+        session.add(nb)
+        session.commit()
+        session.refresh(nb)
+        return int(nb.id)  # type: ignore[arg-type]
+    
+    return await asyncio.to_thread(_db_operations)
 
 
 @router.post("/text", response_model=IngestResponse)
@@ -93,7 +98,7 @@ async def ingest_text_endpoint(
     suggest_topics: bool = Form(False),
     session: Session = Depends(get_session),
 ):
-    nid = _resolve_notebook_id(session, user_id, notebook_id)
+    nid = await _resolve_notebook_id(session, user_id, notebook_id)
     chunk = KnowledgeChunk(text=text, source_type="text", metadata={"ingest": "text"})
     ids = await ingest_chunks([chunk], user_id, notebook_id=nid)
     
@@ -149,7 +154,7 @@ def _is_allowed_content_type(content_type: str | None) -> bool:
     return False
 
 
-def _save_upload(file: UploadFile) -> str:
+async def _save_upload(file: UploadFile) -> str:
     """Stream the uploaded file to disk with validation and unique name.
 
     - Enforces allowlisted content types
@@ -164,11 +169,15 @@ def _save_upload(file: UploadFile) -> str:
         )
 
     tmp_dir = os.getenv("UPLOAD_TMP_DIR", "/tmp")
-    Path(tmp_dir).mkdir(parents=True, exist_ok=True)
+    # Use asyncio.to_thread to make mkdir non-blocking
+    await asyncio.to_thread(Path(tmp_dir).mkdir, parents=True, exist_ok=True)
     out_path = _unique_path(tmp_dir, file.filename or "upload.bin")
 
     bytes_written = 0
-    try:
+    
+    def _write_file():
+        """Write file chunks synchronously (wrapped in asyncio.to_thread)."""
+        nonlocal bytes_written
         with open(out_path, "wb") as f:
             while True:
                 chunk = file.file.read(1024 * 1024)  # 1MB
@@ -181,6 +190,9 @@ def _save_upload(file: UploadFile) -> str:
                         detail="File exceeds 50MB limit",
                     )
                 f.write(chunk)
+    
+    try:
+        await asyncio.to_thread(_write_file)
     except HTTPException:
         # Cleanup partial file on validation failure
         try:
@@ -211,9 +223,9 @@ async def ingest_document_endpoint(
     defaults = get_ingestion_defaults()
     provider = (document_provider or defaults["document_processor"]).lower()
     try:
-        path = _save_upload(file)
-        chunks = extract_text_from_document(path, provider=provider)
-        nid = _resolve_notebook_id(session, user_id, notebook_id)
+        path = await _save_upload(file)
+        chunks = await extract_text_from_document(path, provider=provider)
+        nid = await _resolve_notebook_id(session, user_id, notebook_id)
         ids = await ingest_chunks(chunks, user_id, notebook_id=nid)
     except HTTPException:
         raise
@@ -254,9 +266,9 @@ async def ingest_image_endpoint(
     provider = (vision_provider or defaults["image_processor"]).lower()
     print(f"DEBUG ROUTER: vision_provider={vision_provider}, defaults={defaults}, final_provider={provider}")
     try:
-        path = _save_upload(file)
-        chunks = extract_text_from_image(path, provider=provider)
-        nid = _resolve_notebook_id(session, user_id, notebook_id)
+        path = await _save_upload(file)
+        chunks = await extract_text_from_image(path, provider=provider)
+        nid = await _resolve_notebook_id(session, user_id, notebook_id)
         ids = await ingest_chunks(chunks, user_id, notebook_id=nid)
     except HTTPException:
         raise
@@ -300,9 +312,9 @@ async def ingest_audio_endpoint(
     defaults = get_ingestion_defaults()
     provider = (asr_provider or defaults["audio_asr_provider"]).lower()
     try:
-        path = _save_upload(file)
-        chunks = transcribe_audio_to_text(path, provider=provider)
-        nid = _resolve_notebook_id(session, user_id, notebook_id)
+        path = await _save_upload(file)
+        chunks = await transcribe_audio_to_text(path, provider=provider)
+        nid = await _resolve_notebook_id(session, user_id, notebook_id)
         ids = await ingest_chunks(chunks, user_id, notebook_id=nid)
     except HTTPException:
         raise

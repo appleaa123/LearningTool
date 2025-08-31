@@ -22,7 +22,7 @@ export function MediaUploader({ userId = "anon", providers, notebookId, onSucces
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ids, setIds] = useState<string[] | null>(null);
-  const [visionProvider, setVisionProvider] = useState<string>("gemini"); // ocr | gemini
+  const visionProvider = "gemini"; // Hardcoded to Gemini-only processing
 
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
   const apiBase = import.meta.env.DEV ? "/api" : "";
@@ -63,15 +63,7 @@ export function MediaUploader({ userId = "anon", providers, notebookId, onSucces
     <Card className="p-4 bg-neutral-900 border-neutral-700">
       <div className="space-y-3">
         <div className="flex items-center gap-2">
-          <label className="text-sm text-neutral-300">Process with</label>
-          <select
-            value={visionProvider}
-            onChange={(e) => setVisionProvider(e.target.value)}
-            className="bg-neutral-800 border border-neutral-700 rounded px-2 py-1 text-sm"
-          >
-            <option value="ocr">OCR (Tesseract)</option>
-            <option value="gemini" disabled={!providers?.gemini}>Gemini Vision</option>
-          </select>
+          <label className="text-sm text-neutral-300">Processing with Gemini Vision</label>
         </div>
         <input
           type="file"
