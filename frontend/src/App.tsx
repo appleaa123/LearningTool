@@ -17,6 +17,7 @@ import { NotebookSelector } from "@/components/NotebookSelector";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { MessageCircle, Grid, Target, Plus } from 'lucide-react';
 import { topicService } from "@/services/topicService";
+import { chatService, ChatMessage } from "@/services/chatService";
 
 export default function App() {
   const [processedEventsTimeline, setProcessedEventsTimeline] = useState<
@@ -43,6 +44,11 @@ export default function App() {
   const [topics, setTopics] = useState<any[]>([]);
   const [topicsLoading, setTopicsLoading] = useState(false);
   const [topicsError, setTopicsError] = useState<string | null>(null);
+  
+  // Chat history state - preserves LangGraph streaming while adding persistence
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<number | null>(null);
+  const [chatHistoryLoading, setChatHistoryLoading] = useState(false);
   
   // User ID for consistent data access (derived from thread or default)
   const userId = "anon"; // Default user - in production this would come from authentication
@@ -157,6 +163,39 @@ export default function App() {
     const interval = setInterval(updateCounts, 30000);
     
     return () => clearInterval(interval);
+  }, [userId, notebookId]);
+
+  // Load chat history when notebook changes (REQ-004 implementation)
+  useEffect(() => {
+    const loadChatHistory = async () => {
+      if (!notebookId) {
+        setChatHistory([]);
+        setCurrentSessionId(null);
+        return;
+      }
+
+      try {
+        setChatHistoryLoading(true);
+        
+        // Load existing chat history for this notebook
+        const messages = await chatService.loadNotebookHistory(userId, notebookId);
+        setChatHistory(messages);
+        
+        // Get or create session for future messages
+        const sessionResponse = await chatService.getOrCreateSession(userId, notebookId);
+        setCurrentSessionId(sessionResponse.session_id);
+        
+      } catch (error) {
+        console.warn('Failed to load chat history:', error);
+        // Don't show error to user - chat history is optional enhancement
+        setChatHistory([]);
+        setCurrentSessionId(null);
+      } finally {
+        setChatHistoryLoading(false);
+      }
+    };
+
+    loadChatHistory();
   }, [userId, notebookId]);
 
   useEffect(() => {
@@ -344,7 +383,7 @@ export default function App() {
         <div className="flex-1 overflow-hidden">
           {activeView === 'chat' && (
             <>
-              {thread.messages.length === 0 ? (
+              {thread.messages.length === 0 && chatHistory.length === 0 && !chatHistoryLoading ? (
                 <ErrorBoundary>
                   <div className="h-full flex items-center justify-center">
                     <WelcomeScreen
@@ -385,6 +424,9 @@ export default function App() {
                       onCancel={handleCancel}
                       liveActivityEvents={processedEventsTimeline}
                       historicalActivities={historicalActivities}
+                      chatHistory={chatHistory}
+                      chatHistoryLoading={chatHistoryLoading}
+                      currentSessionId={currentSessionId}
                     />
                   </div>
                 </ErrorBoundary>

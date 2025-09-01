@@ -39,12 +39,14 @@ export const ResearchCard: React.FC<ResearchCardProps> = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const [showAllSources, setShowAllSources] = useState(false);
   
-  // Extract research data
-  const summary = item.content?.summary || item.content?.report || 'No research summary available';
+  // Extract research data with enhanced structure
+  const summary = item.content?.summary || item.content?.report || item.content?.answer || 'No research summary available';
   const sources = item.content?.sources || item.content?.citations || [];
   const researchDate = item.content?.research_date || item.content?.completed_at;
-  const confidence = item.content?.confidence_score;
+  const confidence = item.content?.confidence_score || item.content?.confidence;
   const keywords = item.content?.keywords || [];
+  const question = item.content?.question || 'Research Summary';
+  const metadata = item.content?.metadata || {};
   
   const isLongSummary = summary.length > 500;
   const displaySummary = isExpanded || !isLongSummary 
@@ -99,17 +101,26 @@ export const ResearchCard: React.FC<ResearchCardProps> = ({
         </div>
       </div>
       
+      {/* Research question */}
+      {question !== 'Research Summary' && (
+        <div className="bg-purple-50 dark:bg-purple-950/30 border-l-4 border-purple-500 pl-3 py-2 mb-3">
+          <h4 className="font-medium text-sm text-purple-700 dark:text-purple-300 mb-1">Research Question:</h4>
+          <p className="text-sm text-purple-900 dark:text-purple-100">{question}</p>
+        </div>
+      )}
+      
       {/* Keywords */}
       {keywords.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {keywords.slice(0, 5).map((keyword: string, index: number) => (
-            <Badge key={index} variant="secondary" className="text-xs">
+        <div className="flex flex-wrap gap-1 mb-3">
+          <span className="text-xs font-medium text-muted-foreground mr-2">Keywords:</span>
+          {keywords.slice(0, 6).map((keyword: string, index: number) => (
+            <Badge key={index} variant="secondary" className="text-xs bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
               {keyword}
             </Badge>
           ))}
-          {keywords.length > 5 && (
+          {keywords.length > 6 && (
             <Badge variant="outline" className="text-xs">
-              +{keywords.length - 5} more
+              +{keywords.length - 6} more
             </Badge>
           )}
         </div>
@@ -162,13 +173,25 @@ export const ResearchCard: React.FC<ResearchCardProps> = ({
                       {source.excerpt}
                     </p>
                   )}
+                  {source.published_date && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Published: {new Date(source.published_date).toLocaleDateString()}
+                    </p>
+                  )}
                 </div>
                 
-                {source.relevance && (
-                  <Badge variant="outline" className="text-xs flex-shrink-0">
-                    {Math.round(source.relevance * 100)}%
-                  </Badge>
-                )}
+                <div className="flex flex-col items-end gap-1">
+                  {source.relevance && (
+                    <Badge variant="outline" className="text-xs flex-shrink-0">
+                      {Math.round(source.relevance * 100)}% match
+                    </Badge>
+                  )}
+                  {source.source_type && (
+                    <Badge variant="secondary" className="text-xs flex-shrink-0">
+                      {source.source_type}
+                    </Badge>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -238,9 +261,22 @@ export const ResearchCard: React.FC<ResearchCardProps> = ({
           )}
         </div>
         
-        {/* Research stats */}
-        <div className="text-xs text-muted-foreground">
-          {summary.split(' ').length} words • {sources.length} sources
+        {/* Enhanced research stats */}
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span>{summary.split(' ').length} words</span>
+          <span>{sources.length} sources</span>
+          {keywords.length > 0 && (
+            <span>{keywords.length} keywords</span>
+          )}
+          {metadata.research_depth && (
+            <span className={`px-2 py-1 rounded ${
+              metadata.research_depth === 'deep' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+              metadata.research_depth === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+              'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+            }`}>
+              {metadata.research_depth} research
+            </span>
+          )}
         </div>
       </div>
     </div>

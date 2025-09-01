@@ -27,11 +27,12 @@ export const SummaryCard: React.FC<SummaryCardProps> = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   
-  // Extract summary data
-  const summary = item.content?.summary || item.content?.content || 'No summary available';
+  // Extract summary data with backward compatibility
+  const summary = item.content?.summary || item.content?.content || item.content?.text || 'No summary available';
   const keyPoints = item.content?.key_points || [];
   const sourceContent = item.content?.source_content || item.content?.original_text;
-  const confidence = item.content?.confidence_score;
+  const confidence = item.content?.confidence_score || item.content?.confidence;
+  const metadata = item.content?.metadata || {};
   
   const isLongSummary = summary.length > 400;
   const displaySummary = isExpanded || !isLongSummary 
@@ -75,7 +76,7 @@ export const SummaryCard: React.FC<SummaryCardProps> = ({
           <div className="bg-neutral-50 dark:bg-neutral-900 rounded-lg p-3">
             <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
               <FileText size={14} />
-              Key Points
+              Key Points ({keyPoints.length})
             </h4>
             <ul className="space-y-1">
               {keyPoints.map((point: string, index: number) => (
@@ -85,6 +86,29 @@ export const SummaryCard: React.FC<SummaryCardProps> = ({
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+        
+        {/* Enhanced metadata display */}
+        {metadata && Object.keys(metadata).length > 0 && (
+          <div className="text-xs text-muted-foreground border-t border-neutral-200 dark:border-neutral-700 pt-2 mt-2">
+            <div className="flex items-center gap-4">
+              {metadata.total_sentences && (
+                <span>{metadata.total_sentences} sentences</span>
+              )}
+              {metadata.reading_time && (
+                <span>{metadata.reading_time} min read</span>
+              )}
+              {metadata.complexity && (
+                <span className={`px-2 py-1 rounded text-xs ${
+                  metadata.complexity === 'high' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                  metadata.complexity === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                  'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                }`}>
+                  {metadata.complexity} complexity
+                </span>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -126,10 +150,22 @@ export const SummaryCard: React.FC<SummaryCardProps> = ({
           )}
         </div>
         
-        {/* Word count */}
-        <span className="text-xs text-muted-foreground">
-          {summary.split(' ').length} words
-        </span>
+        {/* Enhanced statistics */}
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span>{summary.split(' ').length} words</span>
+          {keyPoints.length > 0 && (
+            <span>{keyPoints.length} key points</span>
+          )}
+          {confidence && (
+            <span className={`px-2 py-1 rounded ${
+              confidence > 0.8 ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+              confidence > 0.6 ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+              'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+            }`}>
+              {Math.round(confidence * 100)}% confidence
+            </span>
+          )}
+        </div>
       </div>
       
       {/* Source content reference */}

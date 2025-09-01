@@ -1,21 +1,31 @@
 # ACTIVE DEVELOPMENT ROADMAP
 
-*Last Updated: August 28, 2025*
+*Last Updated: August 30, 2025 11:18 UTC*
 *For completed work, see: [completed-work-archive.md](./completed-work-archive.md)*
 
 ---
 
-## 🎯 CURRENT PRIORITIES
+## 🎯 NEW REQUIREMENTS PRIORITY ORDER
 
-### High Priority Features (Next 2-4 weeks)
-1. **Knowledge Newsfeed Frontend** - Social media-style knowledge browser
-2. **Smart Topic Suggestions** - User-controlled deep research system  
-3. **Enhanced Research UX** - Seamless frontend research experience
+### Critical Priority (Immediate - Next 1-2 weeks)
+*No critical issues remaining - REQ-004 completed August 30, 2025*
+
+### High Priority (Following Critical - Next 2-3 weeks)  
+1. **REQ-005: Knowledge Feed Debug** - Fix broken Research/Flash Card/Summary card types in existing feed
+
+### Medium Priority (Next 4-6 weeks)
+2. **REQ-001: File Upload Experience Enhancement** - Simple upload status indicators, disable audio with message
+3. **REQ-002: Research Topic Tab Enhancement** - Improved UX for topic selection and background processing
+
+### Existing High Priority Features (Parallel Development)
+4. **Knowledge Newsfeed Frontend** - Social media-style knowledge browser (backend complete)
+5. **Smart Topic Suggestions** - User-controlled deep research system  
+6. **Enhanced Research UX** - Seamless frontend research experience
 
 ### Medium Priority Enhancements (1-2 months)
-4. **Performance Optimization** - Bundle size reduction and caching
-5. **Advanced Error Monitoring** - Production telemetry and analytics
-6. **User Experience Polish** - Accessibility and mobile improvements
+7. **Performance Optimization** - Bundle size reduction and caching
+8. **Advanced Error Monitoring** - Production telemetry and analytics
+9. **User Experience Polish** - Accessibility and mobile improvements
 
 ---
 
@@ -175,6 +185,118 @@ class SuggestedTopic(SQLModel, table=True):
 - ✅ Research results appear in knowledge feed automatically
 - ✅ Topic context is preserved and displayed with results
 - ✅ System handles topic generation failures gracefully
+
+---
+
+## 🔧 HIGH PRIORITY: KNOWLEDGE FEED DEBUG (REQ-005)
+
+### Current Status
+- **Backend**: ❌ NEEDS FIXES - Research/Flash Card/Summary card generation broken
+- **Frontend**: ❌ NEEDS FIXES - Card rendering issues for broken types
+- **Priority**: High (Existing feature broken)
+- **Estimated Effort**: 1-2 days
+
+### Implementation Plan
+
+#### Phase 1: Backend Card Generation Fixes (4-6 hours)
+**Files to Modify:**
+- `backend/src/services/lightrag_service.py` - Fix card content generation
+- `backend/src/routers/knowledge.py` - Enhanced feed endpoint responses
+
+**Key Fixes:**
+- Research cards: Fix summary generation and source links
+- Flash cards: Fix LLM-generated titles and reveal content
+- Summary cards: Fix LLM-generated summaries from knowledge base
+
+#### Phase 2: Frontend Card Rendering Fixes (3-4 hours)
+**Files to Modify:**
+- `frontend/src/components/KnowledgeFeed.tsx` - Card type handling
+- `frontend/src/components/feed/ResearchCard.tsx` - Research card fixes
+- `frontend/src/components/feed/FlashCard.tsx` - Flash card fixes  
+- `frontend/src/components/feed/SummaryCard.tsx` - Summary card fixes
+
+**Key Features:**
+- Research cards show summary with source links in Sources section
+- Flash cards show title with reveal functionality
+- Summary cards display LLM-generated content
+- All cards maintain consistent styling
+
+### Acceptance Criteria
+- ✅ Research cards show research summary with proper source links
+- ✅ Flash cards display LLM-generated titles with reveal functionality  
+- ✅ Summary cards show LLM-generated knowledge summaries
+- ✅ All card types render consistently in the feed
+- ✅ Card interactions work smoothly
+
+---
+
+## 📤 MEDIUM PRIORITY: FILE UPLOAD ENHANCEMENT (REQ-001)
+
+### Current Status
+- **Backend**: ✅ WORKING - Current upload functionality works
+- **Frontend**: ❌ NEEDS ENHANCEMENT - Missing upload status feedback, audio handling
+- **Priority**: Medium (UX improvement)
+- **Estimated Effort**: 4-6 hours
+
+### Implementation Plan
+
+#### Phase 1: Upload Status Indicators (2-3 hours)
+**Files to Modify:**
+- `frontend/src/components/Upload.tsx` - Add status indicators
+- `backend/src/routers/knowledge.py` - Enhanced upload responses
+
+**Key Features:**
+- Upload success/failure status messages
+- Processing status indicators
+- File ready confirmation
+
+#### Phase 2: Audio Upload Handling (1-2 hours)
+**Files to Modify:**
+- `frontend/src/components/Upload.tsx` - Audio upload button with disabled state
+- `backend/src/routers/knowledge.py` - Audio endpoint with unavailable response
+
+**Key Features:**
+- Audio upload button shows "Sorry, this feature is under development and will be live soon!"
+- Clean user-friendly messaging
+
+### Acceptance Criteria
+- ✅ Upload status shows success/failure clearly
+- ✅ Audio upload shows development message
+- ✅ Users see when files are ready for use
+
+---
+
+## 🔬 MEDIUM PRIORITY: RESEARCH TOPIC ENHANCEMENT (REQ-002)
+
+### Current Status  
+- **Backend**: ❌ NEEDS ENHANCEMENT - Basic functionality exists, needs background processing
+- **Frontend**: ❌ NEEDS ENHANCEMENT - Missing async processing, progress indicators
+- **Priority**: Medium (UX improvement)
+- **Estimated Effort**: 6-8 hours
+
+### Implementation Plan
+
+#### Phase 1: Background Processing (3-4 hours)
+**Files to Modify:**
+- `backend/src/services/research_service.py` - Add background task processing
+- `frontend/src/components/ResearchTopics.tsx` - Async processing UI
+
+**Key Features:**
+- Background research processing
+- Multiple topic selection while research runs
+- Progress indicators and status messages
+
+#### Phase 2: Enhanced UX (2-3 hours)
+**Key Features:**
+- Show remaining topics while processing
+- "Thanks for letting me know your interests" message
+- Completion status tracking
+
+### Acceptance Criteria
+- ✅ Users can select multiple topics while research processes
+- ✅ Progress messages show research status
+- ✅ Background processing continues if user leaves tab
+- ✅ Completion notifications work properly
 
 ---
 

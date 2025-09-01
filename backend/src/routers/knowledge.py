@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Dict, Any, Optional
+import re
+from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, Query, Depends, HTTPException
 from src.services.lightrag_store import LightRAGStore
 from sqlmodel import Session, select
@@ -137,35 +138,60 @@ def get_feed_item_content(
     elif feed_item.kind in [FeedKind.summary, FeedKind.qa, FeedKind.flashcard]:
         transformed = session.get(TransformedItem, feed_item.ref_id)
         if transformed:
+            metadata = transformed.metadata_json or {}
+            
+            # Base content structure
             content = {
                 "text": transformed.text,
                 "type": transformed.type,
-                "metadata": transformed.metadata_json
+                "metadata": metadata
             }
-            # Parse content based on type
-            if feed_item.kind == FeedKind.qa:
-                # Try to extract question and answer from text or metadata
-                metadata = transformed.metadata_json or {}
+            
+            # Enhanced parsing based on type
+            if feed_item.kind == FeedKind.summary:
+                # Extract structured summary data
                 content.update({
-                    "question": metadata.get("question", "No question available"),
-                    "answer": metadata.get("answer", transformed.text)
+                    "summary": metadata.get("summary", transformed.text),
+                    "key_points": metadata.get("key_points", []),
+                    "confidence_score": metadata.get("confidence_score", 0.5),
+                    "content": metadata.get("summary", transformed.text)  # For backward compatibility
                 })
-            elif feed_item.kind == FeedKind.flashcard:
-                metadata = transformed.metadata_json or {}
+                
+            elif feed_item.kind == FeedKind.qa:
+                # Extract structured Q&A data with fallback parsing
                 content.update({
-                    "front": metadata.get("front", "No question available"),
-                    "back": metadata.get("back", transformed.text),
-                    "difficulty": metadata.get("difficulty", "medium")
+                    "question": metadata.get("question", _extract_question_fallback(transformed.text)),
+                    "answer": metadata.get("answer", _extract_answer_fallback(transformed.text)),
+                    "confidence_score": metadata.get("confidence_score", 0.5),
+                    "category": metadata.get("category", "general"),
+                    "sources": metadata.get("sources", [])
+                })
+                
+            elif feed_item.kind == FeedKind.flashcard:
+                # Extract structured flashcard data with fallback parsing
+                content.update({
+                    "front": metadata.get("front", _extract_flashcard_front_fallback(transformed.text)),
+                    "back": metadata.get("back", _extract_flashcard_back_fallback(transformed.text)),
+                    "difficulty": metadata.get("difficulty", "medium"),
+                    "category": metadata.get("category", "general"),
+                    "tags": metadata.get("tags", []),
+                    "total_cards": metadata.get("total_cards", 1)
                 })
     
     elif feed_item.kind == FeedKind.research:
         research = session.get(ResearchSummary, feed_item.ref_id)
         if research:
+            # Enhanced research content with structured sources and keywords
+            sources_data = research.sources or []
+            
             content = {
                 "summary": research.answer,
                 "question": research.question,
-                "sources": research.sources,
-                "research_date": research.created_at.isoformat()
+                "sources": _structure_research_sources(sources_data),
+                "keywords": _extract_research_keywords(research.answer),
+                "confidence_score": _calculate_research_confidence(research.answer, sources_data),
+                "research_date": research.created_at.isoformat(),
+                "report": research.answer  # Alias for backward compatibility
             }
             source_metadata = {"source": "topic_research", "user_initiated": True}
             
@@ -295,5 +321,146 @@ def search_feed(
         ],
         "total": len(all_items)
     }
+
+
+# Helper functions for fallback content parsing and structuring
+
+def _extract_question_fallback(text: str) -> str:
+    """Extract question from unstructured Q&A text as fallback."""
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    
+    # Look for Q: pattern
+    for line in lines:
+        if line.lower().startswith('q:') or line.lower().startswith('question:'):
+            return line.split(':', 1)[1].strip() if ':' in line else line
+    
+    # Fallback: return first line if it looks like a question
+    if lines and lines[0].endswith('?'):
+        return lines[0]
+    
+    # Last resort: return first line or default
+    return lines[0] if lines else "No question available"
+
+
+def _extract_answer_fallback(text: str) -> str:
+    """Extract answer from unstructured Q&A text as fallback."""
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    
+    # Look for A: pattern
+    for i, line in enumerate(lines):
+        if line.lower().startswith('a:') or line.lower().startswith('answer:'):
+            # Return this line and subsequent lines as answer
+            answer_lines = [line.split(':', 1)[1].strip() if ':' in line else line]
+            answer_lines.extend(lines[i+1:])
+            return ' '.join(answer_lines)
+    
+    # Fallback: if first line looks like question, return rest as answer
+    if lines and lines[0].endswith('?') and len(lines) > 1:
+        return ' '.join(lines[1:])
+    
+    # Last resort: return full text or default
+    return text if text.strip() else "No answer available"
+
+
+def _extract_flashcard_front_fallback(text: str) -> str:
+    """Extract front content from unstructured flashcard text as fallback."""
+    # Look for Front: pattern
+    front_match = re.search(r'Front:\s*(.+?)(?=Back:|$)', text, re.IGNORECASE | re.DOTALL)
+    if front_match:
+        return front_match.group(1).strip()
+    
+    # Fallback: split text and use first half
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    if lines:
+        mid_point = max(1, len(lines) // 2)
+        return ' '.join(lines[:mid_point])
+    
+    return "No question available"
+
+
+def _extract_flashcard_back_fallback(text: str) -> str:
+    """Extract back content from unstructured flashcard text as fallback."""
+    # Look for Back: pattern
+    back_match = re.search(r'Back:\s*(.+?)(?=Front:|$)', text, re.IGNORECASE | re.DOTALL)
+    if back_match:
+        return back_match.group(1).strip()
+    
+    # Fallback: split text and use second half
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    if len(lines) > 1:
+        mid_point = len(lines) // 2
+        return ' '.join(lines[mid_point:])
+    
+    return text if text.strip() else "No answer available"
+
+
+def _structure_research_sources(sources_data: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    """Structure research sources for frontend consumption."""
+    if not sources_data:
+        return []
+    
+    structured_sources = []
+    for source in sources_data:
+        if isinstance(source, dict):
+            structured_sources.append({
+                "title": source.get("title", "Untitled Source"),
+                "url": source.get("url", "#"),
+                "excerpt": source.get("excerpt", source.get("description", "")),
+                "relevance": source.get("relevance", source.get("relevancy", 0.8))
+            })
+        elif isinstance(source, str):
+            # Handle string sources as simple title
+            structured_sources.append({
+                "title": source,
+                "url": "#",
+                "excerpt": "",
+                "relevance": 0.7
+            })
+    
+    return structured_sources[:10]  # Limit to 10 sources
+
+
+def _extract_research_keywords(content: str) -> List[str]:
+    """Extract keywords from research content for better categorization."""
+    if not content or len(content.strip()) < 20:
+        return []
+    
+    # Simple keyword extraction - look for important terms
+    # This could be enhanced with NLP libraries in the future
+    words = re.findall(r'\b[A-Z][a-z]{3,}\b|\b[a-z]{4,}\b', content)
+    
+    # Remove common words
+    stop_words = {'that', 'this', 'with', 'from', 'they', 'have', 'were', 'been', 'their', 'said', 'each', 'more', 'time', 'very', 'what', 'know', 'just', 'first', 'could', 'other', 'after', 'back', 'work', 'good', 'take', 'make', 'way', 'also', 'new', 'want', 'because', 'any', 'these', 'give', 'day', 'most', 'us'}
+    
+    keywords = [word.lower() for word in words if word.lower() not in stop_words and len(word) > 3]
+    
+    # Get unique keywords and limit to 8
+    unique_keywords = list(dict.fromkeys(keywords))[:8]
+    
+    return unique_keywords
+
+
+def _calculate_research_confidence(content: str, sources: List[Dict[str, Any]]) -> float:
+    """Calculate confidence score for research results based on content and sources."""
+    if not content or not content.strip():
+        return 0.1
+    
+    base_score = 0.6  # Base confidence
+    
+    # Boost for longer, more detailed content
+    if len(content) > 500:
+        base_score += 0.2
+    elif len(content) > 200:
+        base_score += 0.1
+    
+    # Boost for having sources
+    if sources:
+        base_score += min(0.2, len(sources) * 0.05)
+    
+    # Slight boost for structured content (paragraphs, etc.)
+    if content.count('\n\n') > 0 or content.count('. ') > 3:
+        base_score += 0.1
+    
+    return min(1.0, base_score)
 
 

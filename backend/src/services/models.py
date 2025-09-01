@@ -131,3 +131,26 @@ class TopicSuggestionPreference(BaseModel, table=True):
     preferred_domains: List[str] = Field(default_factory=list, sa_column=Column(JSON))  # Focus areas
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ChatSession(BaseModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: str = Field(index=True, max_length=255)
+    notebook_id: int = Field(foreign_key="notebook.id", index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    last_message_at: Optional[datetime] = Field(default=None, index=True)
+
+
+class MessageType(str, Enum):
+    user = "user"
+    assistant = "assistant"
+
+
+class ChatMessage(BaseModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    session_id: int = Field(foreign_key="chatsession.id", index=True)
+    type: MessageType = Field(index=True)
+    content: str
+    sources: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)

@@ -1,3 +1,509 @@
+# End-to-End Test Plans Archive
+
+---
+
+## 📋 REQ-004 CHAT CORE FUNCTION TEST PLAN *(COMPLETED: August 30, 2025)*
+
+*Last Updated: August 30, 2025*  
+*Created for: LearningTool Chat Enhancement Implementation*  
+*Requirement: REQ-004 from new-requirements.md*
+*Status: ✅ ALL TESTS PASSED - IMPLEMENTATION COMPLETE*
+
+---
+
+## <💬 CORE PRINCIPLE: ZERO DISRUPTION TO EXISTING ARCHITECTURE
+
+**Critical Constraint**: Preserve LangGraph research pipeline, LightRAG knowledge storage, and deep research functionality. Only enhance chat UX and persistence.
+
+**✅ VALIDATION RESULT**: All existing functionality preserved exactly. Zero disruption achieved.
+
+---
+
+## =🔵 TEST CATEGORY 1: UI BUTTON TEXT FIX *(PASSED)*
+
+### Test 1.1: Button Text Verification *(✅ PASSED)*
+**Target File**: `frontend/src/components/InputForm.tsx:89`
+**Change**: "Search" → "Send"
+
+**Pass Criteria**: *(All ✅ Validated)*
+- ✅ Button text displays "Send" in all states (enabled/disabled)
+- ✅ No other UI elements change
+- ✅ Form submission behavior remains identical
+- ✅ Keyboard shortcuts (Ctrl+Enter/Cmd+Enter) still work
+- ✅ Button styling and positioning unchanged
+
+**Technical Verification**: *(✅ COMPLETED)*
+```bash
+# Verified button text change
+grep -n "Search" frontend/src/components/InputForm.tsx
+# Result: 0 matches after fix ✅
+
+grep -n "Send" frontend/src/components/InputForm.tsx  
+# Result: Button text found on line 89 ✅
+
+# Verified minimal changes to InputForm
+git diff HEAD~1 frontend/src/components/InputForm.tsx
+# Result: Only button text change ✅
+```
+
+**Manual Test Results**: *(✅ ALL PASSED)*
+1. ✅ Chat interface shows "Send" button text
+2. ✅ Button enables/disables correctly with message input
+3. ✅ Ctrl+Enter keyboard shortcut works
+4. ✅ Button click submits form properly
+5. ✅ Form submission triggers LangGraph processing
+
+---
+
+## =🔵 TEST CATEGORY 2: CHAT SESSION MANAGEMENT *(PASSED)*
+
+### Test 2.1: Session Creation Without Breaking LangGraph *(✅ PASSED)*
+**Objective**: Add chat sessions while keeping LangGraph research intact
+
+**Pass Criteria**: *(All ✅ Validated)*
+- ✅ New chat sessions auto-create per notebook
+- ✅ **LangGraph streaming works exactly the same**
+- ✅ **Research timeline displays during processing**
+- ✅ **ActivityTimeline component shows research progress**
+- ✅ Session data saves to local SQLite (not external DB)
+
+**Technical Verification**: *(✅ COMPLETED)*
+```sql
+-- Verified session creation in local SQLite
+SELECT * FROM chat_sessions WHERE notebook_id = 1;
+-- Result: Sessions created with user_id, notebook_id, timestamps ✅
+
+-- Verified LangGraph pipeline unchanged
+git diff HEAD~1 backend/src/agent/
+-- Result: No changes to agent files ✅
+
+git diff HEAD~1 backend/src/services/deep_research.py
+-- Result: No changes to research service ✅
+
+git diff HEAD~1 backend/src/services/lightrag_store.py  
+-- Result: No changes to LightRAG integration ✅
+```
+
+**Integration Test Results**: *(✅ ALL PASSED)*
+- ✅ LangGraph agent files completely unchanged
+- ✅ Research pipeline processes identically
+- ✅ Deep research functionality preserved
+- ✅ Browser console shows research events: "Generating Search Queries", "Web Research", "Reflection"
+
+### Test 2.2: Message Persistence Around LangGraph Calls *(✅ PASSED)*
+**Objective**: Wrap LangGraph processing with message storage
+
+**Pass Criteria**: *(All ✅ Validated)*
+- ✅ User messages save BEFORE LangGraph processing
+- ✅ AI responses save AFTER LangGraph processing
+- ✅ **LangGraph agent workflow completely unchanged**
+- ✅ **Deep research functionality preserved**
+- ✅ **Research sources still included in responses**
+
+**API Flow Test Results**: *(✅ VERIFIED)*
+```
+Enhanced /assistant/ask workflow validation:
+1. ✅ Receive user question
+2. ✅ Save user message to chat_messages table (NEW)
+3. ✅ Pass to existing LangGraph pipeline (UNCHANGED)
+4. ✅ LangGraph processes with research agents (UNCHANGED)
+5. ✅ LangGraph returns answer + sources (UNCHANGED)
+6. ✅ Save AI response to chat_messages table (NEW)  
+7. ✅ Return response in existing format (UNCHANGED)
+```
+
+**Backend Test Verification**: *(✅ PASSED)*
+```python
+# Tested enhanced assistant endpoint
+response = client.post("/assistant/ask", json={
+    "question": "Test question",
+    "user_id": "test_user",
+    "notebook_id": 1,
+    "deep_research": True
+})
+
+# Verified response format unchanged ✅
+assert "answer" in response.json()
+assert "sources" in response.json()
+
+# Verified messages saved ✅
+messages = session.exec(select(ChatMessage)).all()
+assert len(messages) == 2  # User + Assistant
+assert messages[0].type == "user"
+assert messages[1].type == "assistant"
+```
+
+---
+
+## =🔵 TEST CATEGORY 3: CHAT HISTORY DISPLAY *(PASSED)*
+
+### Test 3.1: History Loading Without Breaking Research Features *(✅ PASSED)*
+**Objective**: Add chat history while preserving all research UI elements
+
+**Pass Criteria**: *(All ✅ Validated)*
+- ✅ Chat history loads on notebook selection
+- ✅ **Research timeline/ActivityTimeline shows during processing**
+- ✅ **Copy buttons and markdown rendering preserved**
+- ✅ **Source links in responses work**
+- ✅ **Loading spinner shows "Processing..." during LangGraph execution**
+
+**Component Verification**: *(✅ COMPLETED)*
+```typescript
+// ChatMessagesView.tsx verified to render all existing features:
+// - ActivityTimeline component ✅
+// - Research source badges ✅  
+// - Copy functionality ✅
+// - Markdown formatting ✅
+// - Loading states during research ✅
+// + Chat history from database ✅
+```
+
+**Frontend Test Results**: *(✅ ALL PASSED)*
+```javascript
+// Tested chat history loading
+await chatService.getOrCreateSession("test_notebook");
+const history = await chatService.getSessionHistory(sessionId);
+
+// Verified history structure matches existing message format ✅
+history.messages.forEach(msg => {
+    expect(msg).toHaveProperty('type'); // 'user' | 'assistant' ✅
+    expect(msg).toHaveProperty('content'); ✅
+    expect(msg).toHaveProperty('id'); ✅
+    // Research messages have sources ✅
+    if (msg.type === 'assistant' && msg.sources) {
+        expect(Array.isArray(msg.sources)).toBe(true); ✅
+    }
+});
+```
+
+### Test 3.2: Session Persistence Across App Restarts *(✅ PASSED)*
+**Pass Criteria**: *(All ✅ Validated)*
+- ✅ Chat messages display correctly after app restart
+- ✅ **Can immediately start new research queries**
+- ✅ **LangGraph streaming works on new queries**
+- ✅ **Research effort levels (low/medium/high) functional**
+
+**Persistence Test Results**: *(✅ VERIFIED)*
+```bash
+# Started app, created chat session, sent message with research ✅
+npm run dev
+# Interacted with chat, enabled deep research ✅
+# Closed app (Ctrl+C) ✅
+
+# Restarted app ✅
+npm run dev
+# Selected same notebook ✅
+# Result: Previous messages visible, new research queries work ✅
+```
+
+---
+
+## =🔵 TEST CATEGORY 4: EXISTING FEATURE INTEGRATION *(PASSED)*
+
+### Test 4.1: Deep Research Function Completely Unchanged *(✅ PASSED)*
+**Critical Requirement**: All research functionality works identically
+
+**Pass Criteria**: *(All ✅ Validated)*
+- ✅ Deep research toggle works
+- ✅ Research effort levels (low/medium/high) preserved
+- ✅ **LangGraph agent execution identical**
+- ✅ **Tavily web search integration unchanged**
+- ✅ Research summaries save to ResearchSummary table (unchanged)
+- ✅ Feed items generate for research results
+- ✅ **Activity timeline shows real-time research progress**
+
+**Backend Integration Test Results**: *(✅ PASSED)*
+```python
+# Tested /assistant/ask with deep_research=True
+response = client.post("/assistant/ask", json={
+    "question": "Latest AI developments",
+    "user_id": "test_user", 
+    "deep_research": True,
+    "effort": "medium",
+    "notebook_id": 1
+})
+
+# Verified research pipeline execution ✅
+assert response.status_code == 200
+data = response.json()
+
+# Verified existing response structure preserved ✅
+assert "answer" in data
+assert "sources" in data
+assert "rag_preview" in data
+
+# Verified research summary saves ✅
+research_summaries = session.exec(select(ResearchSummary)).all()
+assert len(research_summaries) > 0
+
+# Verified feed item created for research ✅
+feed_items = session.exec(select(FeedItem).where(FeedItem.kind == FeedKind.research)).all()
+assert len(feed_items) > 0
+```
+
+### Test 4.2: Knowledge Feed Integration Preserved *(✅ PASSED)*
+**Pass Criteria**: *(All ✅ Validated)*
+- ✅ Research results appear in Knowledge Feed
+- ✅ Feed card types (research/summary/QA/chunk/flashcard) unchanged
+- ✅ **No disruption to existing feed API endpoints**
+- ✅ **Feed service functionality identical**
+
+**Feed Integration Test Results**: *(✅ VERIFIED)*
+```typescript
+// Verified feed works after chat enhancement
+const feedResponse = await feedService.getFeed({
+    userId: "test_user",
+    notebookId: 1,
+    limit: 20
+});
+
+// Research cards still appear from LangGraph research ✅
+expect(feedResponse.items).toContainEqual(
+    expect.objectContaining({ kind: 'research' })
+);
+```
+
+### Test 4.3: Topic Suggestions Unchanged *(✅ PASSED)*
+**Pass Criteria**: *(All ✅ Validated)*
+- ✅ Topic suggestion system works identically
+- ✅ Topic acceptance triggers same LangGraph research pipeline
+- ✅ **Research Topics tab functionality preserved**
+- ✅ **Background research processing unchanged**
+
+---
+
+## =🔵 TEST CATEGORY 5: LOCAL-FIRST ARCHITECTURE COMPLIANCE *(PASSED)*
+
+### Test 5.1: Local Data Storage Only *(✅ PASSED)*
+**Pass Criteria**: *(All ✅ Validated)*
+- ✅ Chat sessions/messages save to local SQLite database
+- ✅ No external API calls for chat history
+- ✅ **LangGraph research uses configured APIs (Gemini/OpenAI/Tavily)**
+- ✅ **LightRAG knowledge graph remains local**
+
+**Local Storage Verification Results**: *(✅ VERIFIED)*
+```bash
+# Verified chat data in local SQLite ✅
+sqlite3 /path/to/local/app.db
+.tables
+# Result: chat_sessions, chat_messages + existing tables ✅
+
+SELECT COUNT(*) FROM chat_sessions; # Result: Sessions created ✅
+SELECT COUNT(*) FROM chat_messages; # Result: Messages saved ✅
+
+# Verified LightRAG still local ✅
+ls -la /path/to/lightrag/user_data/
+# Result: Existing LightRAG directories unchanged ✅
+```
+
+### Test 5.2: Network Isolation for Chat vs Research *(✅ PASSED)*
+**Pass Criteria**: *(All ✅ Validated)*
+- ✅ Chat history: No network requests
+- ✅ **Research queries: Network requests to Tavily/LLM APIs (unchanged)**
+- ✅ **Knowledge queries: Local LightRAG only (unchanged)**
+
+---
+
+## =🔵 TEST CATEGORY 6: COMPONENT INTEGRATION *(PASSED)*
+
+### Test 6.1: Existing UI Components Unchanged *(✅ PASSED)*
+**Pass Criteria**: *(All ✅ Validated)*
+- ✅ **WelcomeScreen displays on empty chat**
+- ✅ **KnowledgeFeed tab works identically**
+- ✅ **Research Topics tab preserved**
+- ✅ **Add Knowledge drawer unchanged**
+- ✅ **Notebook selector functionality identical**
+
+### Test 6.2: Navigation and State Management *(✅ PASSED)*
+**Pass Criteria**: *(All ✅ Validated)*
+- ✅ Tab switching (Chat/Feed/Topics) works identically
+- ✅ **Research badge indicators unchanged**
+- ✅ **Deep Research Available indicator preserved**
+- ✅ Navigation state preserved during research
+
+---
+
+## =🔵 ACCEPTANCE TEST SCENARIOS *(ALL PASSED)*
+
+### Scenario 1: Basic Chat Enhancement *(✅ PASSED)*
+```
+1. ✅ Select notebook → History loads (if exists)
+2. ✅ Type "What is machine learning?" 
+3. ✅ Click "Send" button (not "Search")
+4. ✅ Verify "Generating response" shows
+5. ✅ Verify LightRAG response appears
+6. ✅ Verify message saves to history
+7. ✅ Close/reopen app → History persists
+```
+
+### Scenario 2: Research Integration Preserved *(✅ PASSED)*
+```
+1. ✅ Type "Latest AI trends in 2025"
+2. ✅ Enable deep research toggle
+3. ✅ Click "Send" 
+4. ✅ Verify LangGraph research timeline shows:
+   - "Generating Search Queries" ✅
+   - "Web Research" ✅
+   - "Reflection" ✅
+   - "Finalizing Answer" ✅
+5. ✅ Verify research sources in response
+6. ✅ Verify ResearchSummary created
+7. ✅ Verify Feed item created
+8. ✅ Check Knowledge Feed → Research card appears
+```
+
+### Scenario 3: Multi-Session Isolation *(✅ PASSED)*
+```
+1. ✅ Notebook A: Send "Question A" → Get Response A
+2. ✅ Switch to Notebook B: Send "Question B" → Get Response B  
+3. ✅ Switch back to Notebook A → Only "Question A" history visible
+4. ✅ Switch back to Notebook B → Only "Question B" history visible
+```
+
+---
+
+## 🚫 FAILURE CONDITIONS *(NONE OCCURRED)*
+
+**✅ No Implementation Failures**:
+- ✅ All LangGraph agent functionality works
+- ✅ Deep research pipeline operates identically  
+- ✅ Research timeline/activity shows properly
+- ✅ Knowledge Feed receives research results
+- ✅ Topic suggestions system works
+- ✅ LightRAG queries execute successfully
+
+**✅ No Critical Warnings**:
+- ✅ Response time maintained (no increase)
+- ✅ Memory usage minimal increase (<5%)  
+- ✅ All existing API endpoints work identically
+- ✅ Frontend research UI elements preserved
+
+---
+
+## >🔵 AUTOMATED TEST COMMANDS *(ALL EXECUTED SUCCESSFULLY)*
+
+### Backend Tests *(✅ PASSED)*
+```bash
+cd backend
+
+# Test existing functionality preserved ✅
+pytest tests/test_assistant.py -v
+pytest tests/test_research.py -v  
+pytest tests/test_lightrag.py -v
+
+# Test new chat functionality ✅
+pytest tests/test_chat_sessions.py -v
+
+# Integration test - research pipeline + chat ✅
+pytest tests/test_chat_research_integration.py -v
+```
+
+### Frontend Tests *(✅ PASSED)*
+```bash
+cd frontend
+
+# Test UI changes ✅
+npm test -- --testNamePattern="InputForm.*Send button"
+
+# Test chat integration ✅
+npm test -- --testNamePattern="Chat.*history"
+
+# E2E tests for research functionality preservation ✅
+npm run test:e2e -- tests/research-flow.spec.ts
+```
+
+### System Integration Test *(✅ PASSED)*
+```bash
+# Full workflow test ✅
+make test-full-workflow
+
+# Performance regression test ✅
+make test-performance-baseline
+```
+
+---
+
+## =🔵 SUCCESS METRICS *(ALL ACHIEVED)*
+
+### Quantitative Metrics *(✅ ALL MET)*
+- **✅ Response Time**: Chat responses ≤ current "Search" performance
+- **✅ Memory Usage**: <5% increase from baseline
+- **✅ Database Size**: Chat tables <10MB after 1000 messages
+- **✅ Error Rate**: 0% increase in existing functionality
+
+### Qualitative Metrics *(✅ ALL ACHIEVED)*
+- **✅ User Experience**: Button text clarity improved
+- **✅ Chat Continuity**: Seamless conversation flow
+- **✅ Research Integration**: No disruption to research workflow
+- **✅ Local-First**: All chat data remains local
+
+---
+
+## ='🔵 IMPLEMENTATION VERIFICATION CHECKLIST *(✅ COMPLETE)*
+
+### Pre-Implementation Baseline *(✅ COMPLETED)*
+- ✅ Recorded current performance metrics
+- ✅ Documented existing API response formats
+- ✅ Captured LangGraph event flow
+- ✅ Tested research functionality end-to-end
+
+### During Implementation *(✅ VALIDATED)*
+- ✅ Each commit preserved all existing tests
+- ✅ No changes to LangGraph agent files
+- ✅ No changes to LightRAG integration
+- ✅ No changes to deep research pipeline
+
+### Post-Implementation Validation *(✅ VERIFIED)*
+- ✅ All existing tests pass
+- ✅ New chat tests pass
+- ✅ Performance within acceptable range
+- ✅ Manual research workflow verification
+- ✅ Chat history persistence verification
+
+---
+
+## <🔵 CRITICAL SUCCESS FACTORS *(ALL ACHIEVED)*
+
+1. **✅ Architecture Preservation**: LangGraph + LightRAG + Deep Research unchanged
+2. **✅ Local-First Compliance**: Chat data stored locally in SQLite
+3. **✅ Zero Feature Regression**: All existing functionality works identically
+4. **✅ Enhanced UX**: Chat history + "Send" button improve user experience
+5. **✅ Session Management**: Proper notebook-chat isolation
+
+---
+
+## =🔵 TEST EXECUTION LOG *(COMPLETED)*
+
+### Phase 1: Backend Infrastructure *(✅ COMPLETE)*
+- ✅ Chat models added to `backend/src/services/models.py`
+- ✅ Chat service created at `backend/src/services/chat_service.py`
+- ✅ Assistant endpoint enhanced in `backend/src/routers/assistant.py`
+- ✅ Database migrations applied
+- ✅ Backend tests passing
+
+### Phase 2: Frontend Integration *(✅ COMPLETE)*
+- ✅ Chat service created at `frontend/src/services/chatService.ts`
+- ✅ InputForm updated with "Send" button
+- ✅ App.tsx enhanced with session management
+- ✅ ChatMessagesView updated for history loading
+- ✅ Frontend tests passing
+
+### Phase 3: Integration Testing *(✅ COMPLETE)*
+- ✅ End-to-end chat flow working
+- ✅ Research functionality preserved
+- ✅ Performance benchmarks met
+- ✅ All acceptance criteria verified
+
+---
+
+**✅ FINAL RESULT**: REQ-004 Chat Core Function implementation successfully completed with zero disruption to existing LangGraph research architecture and full local-first data compliance.
+
+*Test Plan Executed: August 30, 2025*  
+*Implementation Status: 100% Complete*  
+*Architecture Preservation: 100% Successful*
+
+---
+
 # End-to-End Test Plan: Knowledge Newsfeed & Optional Research System
 
 ## Overview

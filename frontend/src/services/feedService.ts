@@ -14,7 +14,48 @@ export interface FeedItem {
 
 // Enhanced feed item with content and topic context
 export interface FeedItemData extends FeedItem {
-  content?: any; // Fetched content varies by type
+  content?: {
+    // Common fields
+    text?: string;
+    type?: string;
+    metadata?: Record<string, any>;
+    
+    // Summary specific
+    summary?: string;
+    key_points?: string[];
+    confidence_score?: number;
+    
+    // Q&A specific
+    question?: string;
+    answer?: string;
+    category?: string;
+    sources?: Array<{title: string; content: string}>;
+    
+    // Flashcard specific
+    front?: string;
+    back?: string;
+    difficulty?: 'easy' | 'medium' | 'hard';
+    tags?: string[];
+    total_cards?: number;
+    
+    // Research specific
+    report?: string;
+    keywords?: string[];
+    citations?: Array<{
+      title: string;
+      url: string;
+      excerpt?: string;
+      relevance?: number;
+      source_type?: string;
+      published_date?: string;
+    }>;
+    research_date?: string;
+    completed_at?: string;
+    confidence?: number;
+    
+    // Chunk specific
+    source_document?: string;
+  };
   topic_context?: {
     topic_id: number;
     topic: string;
@@ -69,42 +110,53 @@ export class FeedService {
   
   /**
    * Get feed items with cursor-based pagination.
+   * Enhanced with retry logic and better error handling.
    * 
    * @param options - Feed retrieval options including cursor position
    * @returns Promise resolving to paginated feed response
    */
   async getFeed(options: FeedOptions): Promise<FeedResponse> {
-    const params = new URLSearchParams({
-      user_id: options.userId,
-      cursor: (options.cursor || 0).toString(),
-      limit: (options.limit || 20).toString(),
+    return this.withRetry(async () => {
+      const params = new URLSearchParams({
+        user_id: options.userId,
+        cursor: (options.cursor || 0).toString(),
+        limit: (options.limit || 20).toString(),
+      });
+      
+      if (options.notebookId !== undefined) {
+        params.append("notebook_id", options.notebookId.toString());
+      }
+      
+      if (options.filter && options.filter !== 'all') {
+        params.append("filter", options.filter);
+      }
+      
+      if (options.search) {
+        params.append("search", options.search);
+      }
+
+      const response = await fetch(`${API_BASE}/knowledge/feed?${params}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        signal: AbortSignal.timeout(15000), // 15 second timeout for feed loading
+      });
+
+      if (!response.ok) {
+        const errorData = await this.parseErrorResponse(response);
+        throw new Error(`Failed to fetch feed: ${errorData.message}`);
+      }
+
+      const data = await response.json();
+      
+      // Validate response structure
+      if (!data.items || !Array.isArray(data.items)) {
+        throw new Error('Invalid feed response structure');
+      }
+      
+      return data;
     });
-    
-    if (options.notebookId !== undefined) {
-      params.append("notebook_id", options.notebookId.toString());
-    }
-    
-    if (options.filter && options.filter !== 'all') {
-      params.append("filter", options.filter);
-    }
-    
-    if (options.search) {
-      params.append("search", options.search);
-    }
-
-    const response = await fetch(`${API_BASE}/knowledge/feed?${params}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to fetch feed: ${errorText}`);
-    }
-
-    return response.json();
   }
 
   /**
@@ -125,19 +177,34 @@ export class FeedService {
       include_topic_context: includeTopicContext.toString(),
     });
 
-    const response = await fetch(`${API_BASE}/knowledge/feed/${itemId}/content?${params}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
+    try {
+      const response = await fetch(`${API_BASE}/knowledge/feed/${itemId}/content?${params}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        // Add timeout for better UX
+        signal: AbortSignal.timeout(10000), // 10 second timeout
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to fetch feed item content: ${errorText}`);
+      if (!response.ok) {
+        const errorData = await this.parseErrorResponse(response);
+        throw new Error(`Failed to fetch feed item content: ${errorData.message}`);
+      }
+
+      const data = await response.json();
+      
+      // Enhanced content processing and validation
+      return this.processContentResponse(data);
+      
+    } catch (error) {
+      if (error instanceof Error && error.name === 'TimeoutError') {
+        throw new Error('Request timed out. Please try again.');
+      } else if (error instanceof TypeError) {
+        throw new Error('Network error. Please check your connection.');
+      }
+      throw error;
     }
-
-    return response.json();
   }
 
   /**
@@ -227,12 +294,117 @@ export class FeedService {
     try {
       const response = await fetch(`${API_BASE}/knowledge/feed/health`, {
         method: "GET",
+        signal: AbortSignal.timeout(5000), // 5 second timeout for health check
       });
       
       return response.ok;
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Process and validate content response from backend.
+   * Ensures consistent data structure for frontend consumption.
+   * 
+   * @private
+   * @param data - Raw response data from backend
+   * @returns Processed and validated content response
+   */
+  private processContentResponse(data: any): FeedContentResponse {
+    // Ensure content exists and is properly structured
+    if (data.content) {
+      // Handle backward compatibility - ensure structured access
+      const content = data.content;
+      
+      // For summary cards, ensure key_points is an array
+      if (data.feed_item?.kind === 'summary') {
+        content.key_points = Array.isArray(content.key_points) ? content.key_points : [];
+        content.confidence_score = typeof content.confidence_score === 'number' ? content.confidence_score : 0.5;
+      }
+      
+      // For flashcard cards, ensure front/back exist
+      if (data.feed_item?.kind === 'flashcard') {
+        content.front = content.front || 'No question available';
+        content.back = content.back || 'No answer available';
+        content.difficulty = content.difficulty || 'medium';
+        content.tags = Array.isArray(content.tags) ? content.tags : [];
+      }
+      
+      // For research cards, ensure sources is an array
+      if (data.feed_item?.kind === 'research') {
+        content.sources = Array.isArray(content.sources) ? content.sources : [];
+        content.keywords = Array.isArray(content.keywords) ? content.keywords : [];
+      }
+      
+      // For Q&A cards, ensure question/answer exist
+      if (data.feed_item?.kind === 'qa') {
+        content.question = content.question || 'No question available';
+        content.answer = content.answer || 'No answer available';
+        content.sources = Array.isArray(content.sources) ? content.sources : [];
+      }
+    }
+    
+    return data;
+  }
+
+  /**
+   * Parse error response from API with fallback handling.
+   * 
+   * @private
+   * @param response - Failed response object
+   * @returns Error information object
+   */
+  private async parseErrorResponse(response: Response): Promise<{message: string; code?: string}> {
+    try {
+      const errorData = await response.json();
+      return {
+        message: errorData.detail || errorData.message || `HTTP ${response.status}`,
+        code: errorData.code
+      };
+    } catch {
+      // Fallback to status text if JSON parsing fails
+      return {
+        message: response.statusText || `HTTP ${response.status}`,
+        code: `HTTP_${response.status}`
+      };
+    }
+  }
+  
+  /**
+   * Enhanced error handling for feed operations with retry logic.
+   * 
+   * @private
+   * @param operation - Function to retry
+   * @param maxRetries - Maximum number of retry attempts
+   * @param delay - Delay between retries in milliseconds
+   * @returns Promise resolving to operation result
+   */
+  private async withRetry<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 2,
+    delay: number = 1000
+  ): Promise<T> {
+    let lastError: Error;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error as Error;
+        
+        // Don't retry on client errors (4xx)
+        if (error instanceof Error && error.message.includes('HTTP 4')) {
+          throw error;
+        }
+        
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, attempt)));
+        }
+      }
+    }
+    
+    throw lastError!;
   }
 }
 

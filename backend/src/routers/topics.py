@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from typing import List, Optional
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import status as http_status
 from sqlmodel import Session
 from pydantic import BaseModel
 
@@ -180,7 +181,7 @@ async def get_topic_suggestions(
         
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve topic suggestions: {str(e)}"
         )
 
@@ -219,7 +220,7 @@ async def accept_topic_suggestion(
         
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to accept topic: {str(e)}"
         )
 
@@ -254,7 +255,7 @@ async def reject_topic_suggestion(
         
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to reject topic: {str(e)}"
         )
 
@@ -275,7 +276,7 @@ async def get_topic_preferences(
         
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve preferences: {str(e)}"
         )
 
@@ -300,7 +301,7 @@ async def update_topic_preferences(
         
         if not update_data:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="No valid preferences provided for update"
             )
         
@@ -309,7 +310,7 @@ async def update_topic_preferences(
             count = update_data["suggestion_count"]
             if not (1 <= count <= 5):
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
+                    status_code=http_status.HTTP_400_BAD_REQUEST,
                     detail="suggestion_count must be between 1 and 5"
                 )
         
@@ -317,7 +318,7 @@ async def update_topic_preferences(
             score = update_data["min_priority_score"]
             if not (0.0 <= score <= 1.0):
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
+                    status_code=http_status.HTTP_400_BAD_REQUEST,
                     detail="min_priority_score must be between 0.0 and 1.0"
                 )
         
@@ -328,7 +329,7 @@ async def update_topic_preferences(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update preferences: {str(e)}"
         )
 
@@ -354,7 +355,7 @@ async def get_topic_feed(
         topic = session.get(SuggestedTopic, topic_id)
         if not topic or topic.notebook_id != nid:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=http_status.HTTP_404_NOT_FOUND,
                 detail="Topic not found"
             )
         
@@ -390,6 +391,6 @@ async def get_topic_feed(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve topic feed: {str(e)}"
         )

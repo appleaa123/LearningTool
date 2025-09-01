@@ -1,7 +1,7 @@
 # IMPLEMENTATION GUIDELINES & PATTERNS
 
 *Reusable development patterns and standards for LearningTool project*
-*Last Updated: August 28, 2025*
+*Last Updated: August 29, 2025 15:30 UTC*
 
 ---
 
@@ -948,4 +948,728 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 ---
 
-*These patterns are extracted from successful implementations in the LearningTool project. Always adapt them to specific use cases while maintaining the core principles.*
+## 🎯 NEW REQUIREMENTS IMPLEMENTATION PATTERNS
+
+### Chat System Implementation Pattern (REQ-004)
+
+**Chat Session Management Pattern:**
+```python
+# Backend chat session service
+from sqlmodel import Field, SQLModel, Relationship
+from typing import Optional, List
+import uuid
+from datetime import datetime
+
+class ChatSession(SQLModel, table=True):
+    """Chat session model with notebook relationship"""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    user_id: str = Field(index=True, max_length=255)
+    notebook_id: str = Field(index=True, max_length=255)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    last_message_at: Optional[datetime] = None
+
+class ChatMessage(SQLModel, table=True):
+    """Individual chat message with session reference"""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    session_id: str = Field(foreign_key="chatsession.id", index=True)
+    type: str = Field(regex="^(user|assistant)$")  # user or assistant
+    content: str = Field(max_length=10000)
+    sources: Optional[str] = None  # JSON string of sources
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+# Chat service pattern
+class ChatService:
+    def __init__(self, session: Session, llm_service: LLMService):
+        self.session = session
+        self.llm_service = llm_service
+    
+    async def create_or_get_session(self, user_id: str, notebook_id: str) -> ChatSession:
+        """Get existing session or create new one"""
+        existing_session = self.session.exec(
+            select(ChatSession)
+            .where(ChatSession.user_id == user_id)
+            .where(ChatSession.notebook_id == notebook_id)
+            .order_by(ChatSession.last_message_at.desc())
+        ).first()
+        
+        if existing_session:
+            return existing_session
+        
+        new_session = ChatSession(user_id=user_id, notebook_id=notebook_id)
+        self.session.add(new_session)
+        await self.session.commit()
+        return new_session
+    
+    async def add_message(self, session_id: str, message_type: str, content: str, sources: List[dict] = None) -> ChatMessage:
+        """Add message to session with user isolation"""
+        message = ChatMessage(
+            session_id=session_id,
+            type=message_type,
+            content=content,
+            sources=json.dumps(sources) if sources else None
+        )
+        
+        self.session.add(message)
+        
+        # Update session last message time
+        session = self.session.get(ChatSession, session_id)
+        session.last_message_at = datetime.utcnow()
+        
+        await self.session.commit()
+        return message
+```
+
+**Frontend Chat Component Pattern:**
+```typescript
+// Chat component with session management
+import React, { useState, useEffect, useRef } from 'react';
+import { Button, Input, ScrollArea } from '@/components/ui';
+
+interface ChatMessage {
+  id: string;
+  type: 'user' | 'assistant';
+  content: string;
+  sources?: Array<{title: string, content: string}>;
+  timestamp: string;
+}
+
+interface ChatSession {
+  id: string;
+  notebook_id: string;
+  messages: ChatMessage[];
+}
+
+export const ChatComponent: React.FC<{notebookId: string}> = ({ notebookId }) => {
+  const [session, setSession] = useState<ChatSession | null>(null);
+  const [inputValue, setInputValue] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Load or create chat session
+  useEffect(() => {
+    const loadSession = async () => {
+      try {
+        const sessionData = await chatService.getOrCreateSession(notebookId);
+        setSession(sessionData);
+      } catch (error) {
+        console.error('Failed to load chat session:', error);
+      }
+    };
+    
+    loadSession();
+  }, [notebookId]);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [session?.messages]);
+
+  const handleSend = async () => {
+    if (!inputValue.trim() || !session || isGenerating) return;
+
+    const userMessage = inputValue.trim();
+    setInputValue('');
+    setIsGenerating(true);
+
+    try {
+      // Add user message optimistically
+      const newUserMessage: ChatMessage = {
+        id: Date.now().toString(),
+        type: 'user',
+        content: userMessage,
+        timestamp: new Date().toISOString()
+      };
+
+      setSession(prev => prev ? {
+        ...prev,
+        messages: [...prev.messages, newUserMessage]
+      } : null);
+
+      // Send to backend
+      const response = await chatService.sendMessage({
+        question: userMessage,
+        session_id: session.id,
+        notebook_id: session.notebook_id,
+        mode: 'local'
+      });
+
+      // Add assistant response
+      const assistantMessage: ChatMessage = {
+        id: response.message_id,
+        type: 'assistant',
+        content: response.answer,
+        sources: response.sources,
+        timestamp: new Date().toISOString()
+      };
+
+      setSession(prev => prev ? {
+        ...prev,
+        messages: [...prev.messages, assistantMessage]
+      } : null);
+
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      // Handle error state
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Message history */}
+      <ScrollArea className="flex-1 p-4">
+        {session?.messages.map((message) => (
+          <div key={message.id} className={`mb-4 ${message.type === 'user' ? 'text-right' : 'text-left'}`}>
+            <div className={`inline-block max-w-[80%] p-3 rounded-lg ${
+              message.type === 'user' 
+                ? 'bg-blue-500 text-white' 
+                : 'bg-gray-100 text-gray-900'
+            }`}>
+              <p>{message.content}</p>
+              {message.sources && (
+                <div className="mt-2 text-sm opacity-80">
+                  Sources: {message.sources.map(s => s.title).join(', ')}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+        {isGenerating && (
+          <div className="text-left mb-4">
+            <div className="inline-block bg-gray-100 text-gray-900 p-3 rounded-lg">
+              Generating response...
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </ScrollArea>
+
+      {/* Input area */}
+      <div className="p-4 border-t">
+        <div className="flex gap-2">
+          <Input
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            placeholder="Ask a question about your knowledge..."
+            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+            disabled={isGenerating}
+            className="flex-1"
+          />
+          <Button onClick={handleSend} disabled={isGenerating || !inputValue.trim()}>
+            Send
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+```
+
+### Knowledge Feed Card Implementation Pattern (REQ-005)
+
+**Feed Card Component Factory Pattern:**
+```typescript
+// Card type definitions
+interface BaseFeedCard {
+  id: string;
+  type: 'research' | 'flashcard' | 'qa' | 'chunk' | 'summary';
+  title: string;
+  content: string;
+  metadata: {
+    topic: string;
+    created_at: string;
+    relevancy_score?: number;
+  };
+}
+
+interface ResearchCard extends BaseFeedCard {
+  type: 'research';
+  sources: Array<{title: string, url: string}>;
+}
+
+interface FlashCard extends BaseFeedCard {
+  type: 'flashcard';
+  reveal_content: string;
+}
+
+interface QACard extends BaseFeedCard {
+  type: 'qa';
+  question: string;
+  answer: string;
+}
+
+// Card component factory
+export const FeedCardFactory: React.FC<{item: BaseFeedCard}> = ({ item }) => {
+  switch (item.type) {
+    case 'research':
+      return <ResearchCardComponent item={item as ResearchCard} />;
+    case 'flashcard':
+      return <FlashCardComponent item={item as FlashCard} />;
+    case 'qa':
+      return <QACardComponent item={item as QACard} />;
+    case 'chunk':
+      return <ChunkCardComponent item={item} />;
+    case 'summary':
+      return <SummaryCardComponent item={item} />;
+    default:
+      return <DefaultCardComponent item={item} />;
+  }
+};
+
+// Research card with sources
+const ResearchCardComponent: React.FC<{item: ResearchCard}> = ({ item }) => {
+  return (
+    <Card className="mb-4">
+      <CardHeader>
+        <CardTitle className="text-sm text-blue-600">Research</CardTitle>
+        <h3 className="font-medium">{item.title}</h3>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          <div>
+            <h4 className="font-medium text-sm mb-2">Summary</h4>
+            <p className="text-sm text-gray-700">{item.content}</p>
+          </div>
+          
+          {item.sources.length > 0 && (
+            <div>
+              <h4 className="font-medium text-sm mb-2">Sources</h4>
+              <ul className="space-y-1">
+                {item.sources.map((source, idx) => (
+                  <li key={idx}>
+                    <a 
+                      href={source.url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 hover:underline"
+                    >
+                      {source.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+// Flash card with reveal functionality
+const FlashCardComponent: React.FC<{item: FlashCard}> = ({ item }) => {
+  const [isRevealed, setIsRevealed] = useState(false);
+
+  return (
+    <Card className="mb-4 cursor-pointer" onClick={() => setIsRevealed(!isRevealed)}>
+      <CardHeader>
+        <CardTitle className="text-sm text-purple-600">Flash Card</CardTitle>
+        <h3 className="font-medium">{item.title}</h3>
+      </CardHeader>
+      <CardContent>
+        {!isRevealed ? (
+          <div className="text-center py-4">
+            <p className="text-sm text-gray-500 mb-2">Click to reveal knowledge</p>
+            <Button variant="outline" size="sm">Reveal</Button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-sm text-gray-700">{item.reveal_content}</p>
+            <Button variant="ghost" size="sm" onClick={() => setIsRevealed(false)}>
+              Hide
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+```
+
+### Upload Status Pattern (REQ-001)
+
+**Upload Status Management Pattern:**
+```typescript
+// Upload status types
+interface UploadStatus {
+  id: string;
+  filename: string;
+  status: 'uploading' | 'processing' | 'completed' | 'failed';
+  message: string;
+  progress?: number;
+}
+
+// Upload component with status
+export const UploadComponent: React.FC = () => {
+  const [uploadStatuses, setUploadStatuses] = useState<UploadStatus[]>([]);
+
+  const handleFileUpload = async (files: FileList, type: 'image' | 'document' | 'audio') => {
+    for (const file of Array.from(files)) {
+      const uploadId = Date.now().toString();
+      
+      // Add upload status
+      setUploadStatuses(prev => [...prev, {
+        id: uploadId,
+        filename: file.name,
+        status: 'uploading',
+        message: 'Uploading file...',
+        progress: 0
+      }]);
+
+      try {
+        if (type === 'audio') {
+          // Handle audio upload with development message
+          setUploadStatuses(prev => prev.map(status => 
+            status.id === uploadId 
+              ? { ...status, status: 'failed', message: 'Sorry, this feature is under development and will be live soon!' }
+              : status
+          ));
+          return;
+        }
+
+        // Actual upload
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('user_id', getCurrentUserId());
+
+        const response = await uploadService.uploadFile(formData, type);
+
+        // Update status to processing
+        setUploadStatuses(prev => prev.map(status => 
+          status.id === uploadId 
+            ? { ...status, status: 'processing', message: 'Processing file...' }
+            : status
+        ));
+
+        // Poll for completion (optional)
+        if (response.upload_id) {
+          pollUploadStatus(uploadId, response.upload_id);
+        } else {
+          // Direct completion
+          setUploadStatuses(prev => prev.map(status => 
+            status.id === uploadId 
+              ? { ...status, status: 'completed', message: 'File uploaded and ready for use!' }
+              : status
+          ));
+        }
+
+      } catch (error) {
+        setUploadStatuses(prev => prev.map(status => 
+          status.id === uploadId 
+            ? { ...status, status: 'failed', message: 'Upload failed. Please try again.' }
+            : status
+        ));
+      }
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Upload buttons */}
+      <div className="flex gap-2">
+        <UploadButton type="image" onUpload={handleFileUpload} />
+        <UploadButton type="document" onUpload={handleFileUpload} />
+        <UploadButton type="audio" onUpload={handleFileUpload} disabled />
+      </div>
+
+      {/* Upload status list */}
+      {uploadStatuses.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="font-medium">Upload Status</h4>
+          {uploadStatuses.map(status => (
+            <div key={status.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+              <StatusIcon status={status.status} />
+              <div className="flex-1">
+                <p className="text-sm font-medium">{status.filename}</p>
+                <p className="text-xs text-gray-600">{status.message}</p>
+              </div>
+              {status.status === 'completed' && (
+                <Button variant="ghost" size="sm" onClick={() => removeStatus(status.id)}>
+                  ×
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+```
+
+### Research Topic Background Processing Pattern (REQ-002)
+
+**Background Research Processing Pattern:**
+```python
+# Backend background research pattern
+from celery import Celery
+from typing import List
+
+class ResearchTopicService:
+    def __init__(self, session: Session, research_agent: LangGraphAgent):
+        self.session = session
+        self.research_agent = research_agent
+    
+    async def process_topic_selection(self, user_id: str, topic_id: str, action: str):
+        """Handle topic selection with background processing"""
+        topic = self.session.get(ResearchTopic, topic_id)
+        
+        if action == "interested":
+            # Update topic status
+            topic.status = "researching"
+            
+            # Create research task
+            research_task = ResearchTask(
+                topic_id=topic_id,
+                user_id=user_id,
+                status="queued",
+                progress_message="Queued for research..."
+            )
+            
+            self.session.add(research_task)
+            await self.session.commit()
+            
+            # Start background research
+            start_background_research.delay(research_task.id)
+            
+        elif action == "not_interested":
+            topic.status = "rejected"
+            await self.session.commit()
+        
+        return {"status": action, "research_id": research_task.id if action == "interested" else None}
+
+@celery_app.task
+def start_background_research(research_task_id: str):
+    """Background research task"""
+    try:
+        research_task = session.get(ResearchTask, research_task_id)
+        research_task.status = "processing"
+        research_task.progress_message = "Searching relevant knowledge..."
+        session.commit()
+        
+        # Perform research using LangGraph agent
+        results = research_agent.research_topic(research_task.topic.title)
+        
+        # Save results
+        research_task.status = "completed"
+        research_task.progress_message = "Research complete!"
+        research_task.results = json.dumps(results)
+        research_task.completed_at = datetime.utcnow()
+        
+        # Create feed items for results
+        create_research_feed_items(research_task.user_id, results)
+        
+        session.commit()
+        
+    except Exception as e:
+        research_task.status = "failed"
+        research_task.progress_message = f"Research failed: {str(e)}"
+        session.commit()
+```
+
+**Frontend Async Processing Pattern:**
+```typescript
+// Research topic component with async processing
+export const ResearchTopicsComponent: React.FC = () => {
+  const [topics, setTopics] = useState<ResearchTopic[]>([]);
+  const [processingTopics, setProcessingTopics] = useState<Set<string>>(new Set());
+  const [allTopicsProcessed, setAllTopicsProcessed] = useState(false);
+
+  const handleTopicAction = async (topicId: string, action: 'interested' | 'not_interested') => {
+    setProcessingTopics(prev => new Set([...prev, topicId]));
+    
+    try {
+      const response = await researchService.processTopicSelection(topicId, action);
+      
+      // Update topic status
+      setTopics(prev => prev.map(topic => 
+        topic.id === topicId 
+          ? { ...topic, status: action === 'interested' ? 'researching' : 'rejected' }
+          : topic
+      ));
+
+      // Start polling for research progress if interested
+      if (action === 'interested' && response.research_id) {
+        pollResearchProgress(response.research_id);
+      }
+
+      // Check if all topics processed
+      const remainingTopics = topics.filter(t => t.id !== topicId && t.status === 'pending');
+      if (remainingTopics.length === 0) {
+        setAllTopicsProcessed(true);
+        setTimeout(() => {
+          setAllTopicsProcessed(false); // Reset for next batch
+        }, 5000);
+      }
+
+    } catch (error) {
+      console.error('Failed to process topic:', error);
+    } finally {
+      setProcessingTopics(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(topicId);
+        return newSet;
+      });
+    }
+  };
+
+  const pollResearchProgress = async (researchId: string) => {
+    const poll = async () => {
+      try {
+        const status = await researchService.getResearchStatus(researchId);
+        
+        // Update UI based on status
+        if (status.status === 'completed') {
+          showNotification('Research complete! Check your Knowledge Feed for results.');
+          return; // Stop polling
+        } else if (status.status === 'failed') {
+          showNotification('Research failed. Please try again.', 'error');
+          return; // Stop polling
+        }
+        
+        // Continue polling
+        setTimeout(poll, 5000);
+        
+      } catch (error) {
+        console.error('Failed to poll research status:', error);
+      }
+    };
+    
+    poll();
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Topic cards */}
+      {topics.filter(t => t.status === 'pending').map(topic => (
+        <TopicCard 
+          key={topic.id}
+          topic={topic}
+          onAction={handleTopicAction}
+          isProcessing={processingTopics.has(topic.id)}
+        />
+      ))}
+
+      {/* Completion message */}
+      {allTopicsProcessed && (
+        <Card className="p-4 bg-green-50 border-green-200">
+          <p className="text-green-800">
+            Thanks for letting me know your interests! I will process your research requests 
+            and show the knowledge in Chat or Knowledge Feed tabs for your reference 😊
+          </p>
+        </Card>
+      )}
+    </div>
+  );
+};
+```
+
+### Testing Patterns for New Requirements
+
+**Chat System Tests:**
+```python
+# Backend chat tests
+class TestChatSystem:
+    def test_session_creation(self):
+        """Test chat session creation with notebook relationship"""
+        service = ChatService(session, llm_service)
+        
+        chat_session = await service.create_or_get_session("user123", "notebook456")
+        
+        assert chat_session.user_id == "user123"
+        assert chat_session.notebook_id == "notebook456"
+        assert chat_session.id is not None
+    
+    def test_message_persistence(self):
+        """Test message saving with session context"""
+        session = await chat_service.create_or_get_session("user123", "notebook456")
+        
+        message = await chat_service.add_message(
+            session.id, "user", "Test question"
+        )
+        
+        # Verify message saved
+        saved_message = db_session.get(ChatMessage, message.id)
+        assert saved_message.content == "Test question"
+        assert saved_message.session_id == session.id
+    
+    def test_session_isolation(self):
+        """Test user isolation for chat sessions"""
+        session1 = await chat_service.create_or_get_session("user1", "notebook1")
+        session2 = await chat_service.create_or_get_session("user2", "notebook1")
+        
+        assert session1.id != session2.id
+        assert session1.user_id != session2.user_id
+```
+
+**Frontend Component Tests:**
+```typescript
+// Chat component tests
+describe('ChatComponent', () => {
+  it('changes button text from Search to Send', () => {
+    render(<ChatComponent notebookId="test" />);
+    
+    const sendButton = screen.getByRole('button', { name: /send/i });
+    expect(sendButton).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /search/i })).not.toBeInTheDocument();
+  });
+
+  it('displays chat history correctly', async () => {
+    const mockMessages = [
+      { id: '1', type: 'user', content: 'Hello', timestamp: '2025-08-29T15:00:00Z' },
+      { id: '2', type: 'assistant', content: 'Hi there!', timestamp: '2025-08-29T15:00:01Z' }
+    ];
+    
+    vi.mocked(chatService.getOrCreateSession).mockResolvedValue({
+      id: 'session1',
+      notebook_id: 'notebook1',
+      messages: mockMessages
+    });
+    
+    render(<ChatComponent notebookId="notebook1" />);
+    
+    await waitFor(() => {
+      expect(screen.getByText('Hello')).toBeInTheDocument();
+      expect(screen.getByText('Hi there!')).toBeInTheDocument();
+    });
+  });
+});
+
+// Upload status tests
+describe('UploadComponent', () => {
+  it('shows development message for audio uploads', async () => {
+    render(<UploadComponent />);
+    
+    const audioButton = screen.getByRole('button', { name: /upload audio/i });
+    fireEvent.click(audioButton);
+    
+    await waitFor(() => {
+      expect(screen.getByText(/this feature is under development/i)).toBeInTheDocument();
+    });
+  });
+
+  it('displays upload success status', async () => {
+    const file = new File(['content'], 'test.pdf', { type: 'application/pdf' });
+    
+    vi.mocked(uploadService.uploadFile).mockResolvedValue({
+      status: 'success',
+      message: 'File uploaded successfully'
+    });
+    
+    render(<UploadComponent />);
+    
+    const input = screen.getByLabelText(/upload document/i);
+    fireEvent.change(input, { target: { files: [file] } });
+    
+    await waitFor(() => {
+      expect(screen.getByText(/uploaded and ready for use/i)).toBeInTheDocument();
+    });
+  });
+});
+```
+
+---
+
+*These patterns are extracted from successful implementations in the LearningTool project and enhanced with new requirements specifications. Always adapt them to specific use cases while maintaining the core principles.*

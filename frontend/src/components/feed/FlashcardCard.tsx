@@ -28,14 +28,16 @@ export const FlashcardCard: React.FC<FlashcardCardProps> = ({
   const [isFlipped, setIsFlipped] = useState(false);
   const [showAnswer, setShowAnswer] = useState(false);
   
-  // Extract flashcard data
-  const front = item.content?.front || item.content?.question || 'No question available';
-  const back = item.content?.back || item.content?.answer || 'No answer available';
+  // Extract flashcard data with backward compatibility
+  const front = item.content?.front || item.content?.question || item.content?.text?.split('Back:')[0]?.replace('Front:', '').trim() || 'No question available';
+  const back = item.content?.back || item.content?.answer || item.content?.text?.split('Back:')[1]?.trim() || 'No answer available';
   const difficulty = item.content?.difficulty || 'medium';
-  const category = item.content?.category;
+  const category = item.content?.category || 'general';
   const tags = item.content?.tags || [];
   const studyCount = item.content?.study_count || 0;
   const lastStudied = item.content?.last_studied;
+  const totalCards = item.content?.total_cards || 1;
+  const metadata = item.content?.metadata || {};
   
   // Get difficulty color
   const getDifficultyColor = (level: string) => {
@@ -106,21 +108,29 @@ export const FlashcardCard: React.FC<FlashcardCardProps> = ({
         </div>
       </div>
       
-      {/* Tags */}
-      {tags.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {tags.slice(0, 4).map((tag: string, index: number) => (
-            <Badge key={index} variant="secondary" className="text-xs">
-              #{tag}
-            </Badge>
-          ))}
-          {tags.length > 4 && (
-            <Badge variant="outline" className="text-xs">
-              +{tags.length - 4}
-            </Badge>
-          )}
-        </div>
-      )}
+      {/* Tags and metadata */}
+      <div className="flex flex-wrap items-center gap-2">
+        {tags.length > 0 && (
+          <>
+            {tags.slice(0, 3).map((tag: string, index: number) => (
+              <Badge key={index} variant="secondary" className="text-xs">
+                #{tag}
+              </Badge>
+            ))}
+            {tags.length > 3 && (
+              <Badge variant="outline" className="text-xs">
+                +{tags.length - 3} more
+              </Badge>
+            )}
+          </>
+        )}
+        
+        {totalCards > 1 && (
+          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+            {totalCards} cards
+          </Badge>
+        )}
+      </div>
       
       {/* Flashcard content */}
       <div className="relative">
@@ -148,6 +158,11 @@ export const FlashcardCard: React.FC<FlashcardCardProps> = ({
               <p className="text-sm font-medium leading-relaxed text-blue-900 dark:text-blue-100">
                 {front}
               </p>
+              {totalCards > 1 && (
+                <div className="text-xs text-blue-600 dark:text-blue-400 mt-2">
+                  Card 1 of {totalCards}
+                </div>
+              )}
             </div>
             
             <div className="mt-3 text-xs text-blue-600 dark:text-blue-400">
@@ -171,6 +186,11 @@ export const FlashcardCard: React.FC<FlashcardCardProps> = ({
               <p className="text-sm leading-relaxed text-green-900 dark:text-green-100">
                 {back}
               </p>
+              {totalCards > 1 && (
+                <div className="text-xs text-green-600 dark:text-green-400 mt-2">
+                  Card 1 of {totalCards} • {difficulty} difficulty
+                </div>
+              )}
             </div>
             
             <div className="mt-3 text-xs text-green-600 dark:text-green-400">
@@ -223,6 +243,11 @@ export const FlashcardCard: React.FC<FlashcardCardProps> = ({
           
           {lastStudied && (
             <span>{formatLastStudied(lastStudied)}</span>
+          )}
+          
+          {/* Enhanced metadata */}
+          {metadata.source_topic && (
+            <span>Topic: {metadata.source_topic}</span>
           )}
         </div>
         
