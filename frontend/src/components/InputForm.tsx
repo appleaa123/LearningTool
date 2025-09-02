@@ -86,7 +86,7 @@ export const InputForm: React.FC<InputFormProps> = ({
               } p-2 cursor-pointer rounded-full transition-all duration-200 text-base`}
               disabled={isSubmitDisabled}
             >
-              Search
+              Send
               <Send className="h-5 w-5" />
             </Button>
           )}

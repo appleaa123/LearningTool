@@ -5,12 +5,13 @@ import re
 import subprocess
 import base64
 import mimetypes
+import asyncio
 from typing import List
 
 from src.ingestion.models import KnowledgeChunk
 
 
-def extract_text_from_document(file_path: str, provider: str | None = None) -> List[KnowledgeChunk]:
+async def extract_text_from_document(file_path: str, provider: str | None = None) -> List[KnowledgeChunk]:
     """Extract text from document formats using LLM APIs or unstructured library.
 
     - provider="gemini": uses Gemini Vision/Document AI through google-genai
@@ -29,25 +30,31 @@ def extract_text_from_document(file_path: str, provider: str | None = None) -> L
         except Exception as exc:
             raise RuntimeError("google-genai package is required for Gemini document processing.") from exc
         
-        with open(file_path, "rb") as f:
-            doc_bytes = f.read()
+        def _read_file():
+            with open(file_path, "rb") as f:
+                return f.read()
+        
+        doc_bytes = await asyncio.to_thread(_read_file)
         mime_type, _ = mimetypes.guess_type(file_path)
         mime_type = mime_type or "application/octet-stream"
         encoded = base64.b64encode(doc_bytes).decode("utf-8")
         
-        client = Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=model_id,
-            contents=[
-                {
-                    "role": "user",
-                    "parts": [
-                        {"text": "Extract all readable text from this document. Preserve structure and formatting. Reply with plain text only."},
-                        {"inline_data": {"mime_type": mime_type, "data": encoded}},
-                    ],
-                }
-            ],
-        )
+        def _call_gemini_api():
+            client = Client(api_key=api_key)
+            return client.models.generate_content(
+                model=model_id,
+                contents=[
+                    {
+                        "role": "user",
+                        "parts": [
+                            {"text": "Extract all readable text from this document. Preserve structure and formatting. Reply with plain text only."},
+                            {"inline_data": {"mime_type": mime_type, "data": encoded}},
+                        ],
+                    }
+                ],
+            )
+        
+        response = await asyncio.to_thread(_call_gemini_api)
         text = (getattr(response, "text", None) or "").strip()
         text = redact_pii(text)
         return [
@@ -66,8 +73,11 @@ def extract_text_from_document(file_path: str, provider: str | None = None) -> L
         model_id = os.getenv("OPENAI_DOCUMENT_MODEL", "gpt-4o")
         
         # For OpenAI, we'll use vision API for image-based documents or text extraction
-        with open(file_path, "rb") as f:
-            doc_bytes = f.read()
+        def _read_file():
+            with open(file_path, "rb") as f:
+                return f.read()
+        
+        doc_bytes = await asyncio.to_thread(_read_file)
         mime_type, _ = mimetypes.guess_type(file_path)
         
         if mime_type and mime_type.startswith("text/"):
@@ -108,12 +118,15 @@ def extract_text_from_document(file_path: str, provider: str | None = None) -> L
                 "max_tokens": 4000
             }
             
-            resp = requests.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers,
-                json=data,
-                timeout=120,
-            )
+            def _call_openai_api():
+                return requests.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers=headers,
+                    json=data,
+                    timeout=120,
+                )
+            
+            resp = await asyncio.to_thread(_call_openai_api)
             
             if resp.status_code >= 300:
                 raise RuntimeError(f"OpenAI document processing failed: {resp.status_code} {resp.text}")
@@ -172,32 +185,39 @@ def redact_pii(text: str) -> str:
     return redacted
 
 
-def extract_text_from_image(file_path: str, provider: str | None = None) -> List[KnowledgeChunk]:
-    """Extract text from image using either OCR or Gemini Vision (if configured).
-
-    - provider="ocr": uses Pillow + pytesseract
-    - provider="gemini": uses Gemini Vision through google-genai
+async def extract_text_from_image(file_path: str, provider: str | None = None) -> List[KnowledgeChunk]:
+    """Extract text from image using Gemini Vision API.
+    
+    Note: Only Gemini Vision processing is supported for image OCR.
+    The provider parameter is maintained for compatibility but ignored.
     """
-    selected = (provider or os.getenv("INGEST_IMAGE_PROCESSOR", "gemini")).lower()
-    print(f"DEBUG: Image processor selected: {selected}, provider param: {provider}, env var: {os.getenv('INGEST_IMAGE_PROCESSOR')}")
-    if selected == "gemini":
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            raise RuntimeError("GEMINI_API_KEY is not set for Gemini vision.")
-        model_id = os.getenv("GEMINI_VISION_MODEL", os.getenv("GEMINI_DEFAULT_MODEL", "gemini-1.5-flash"))
-        try:
-            from google.genai import Client  # lazy import
-            from PIL import Image
-        except Exception as exc:  # pragma: no cover
-            raise RuntimeError("google-genai and pillow are required for Gemini vision.") from exc
+    # Always use Gemini - ignore provider parameter
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY is required for image processing.")
+    
+    model_id = os.getenv("GEMINI_VISION_MODEL", os.getenv("GEMINI_DEFAULT_MODEL", "gemini-1.5-flash"))
+    
+    try:
+        from google.genai import Client  # lazy import
+        from PIL import Image
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("google-genai and pillow are required for Gemini vision.") from exc
+    
+    # Wrap PIL operations in async thread to prevent blocking
+    def _process_image():
         img = Image.open(file_path)
         # Convert to base64-encoded PNG
         import io
         buf = io.BytesIO()
         img.save(buf, format="PNG")
-        encoded = base64.b64encode(buf.getvalue()).decode("utf-8")
+        return base64.b64encode(buf.getvalue()).decode("utf-8")
+    
+    encoded = await asyncio.to_thread(_process_image)
+    
+    def _call_gemini_vision_api():
         client = Client(api_key=api_key)
-        response = client.models.generate_content(
+        return client.models.generate_content(
             model=model_id,
             contents=[
                 {
@@ -209,53 +229,21 @@ def extract_text_from_image(file_path: str, provider: str | None = None) -> List
                 }
             ],
         )
-        text = (getattr(response, "text", None) or "").strip()
-        text = redact_pii(text)
-        return [
-            KnowledgeChunk(
-                text=text,
-                source_type="image",
-                source_uri=file_path,
-                metadata={"source_type": "image", "source_uri": file_path, "provider": "gemini", "model": model_id},
-            )
-        ]
-
-    # Default OCR path
-    try:
-        from PIL import Image  # lazy import
-        import pytesseract
-    except Exception as exc:  # pragma: no cover
-        raise RuntimeError("`pillow` and `pytesseract` are required for image OCR.") from exc
-
-    img = Image.open(file_path)
-    full_text = pytesseract.image_to_string(img)
-    full_text = redact_pii(full_text.strip())
-    # Simple paragraph chunking by blank lines
-    paragraphs = [p.strip() for p in re.split(r"\n\s*\n+", full_text) if p.strip()]
-    chunks: List[KnowledgeChunk] = []
-    for para in paragraphs:
-        chunks.append(
-            KnowledgeChunk(
-                text=para,
-                source_type="image",
-                source_uri=file_path,
-                metadata={"source_type": "image", "source_uri": file_path, "provider": "ocr"},
-            )
+    
+    response = await asyncio.to_thread(_call_gemini_vision_api)
+    text = (getattr(response, "text", None) or "").strip()
+    text = redact_pii(text)
+    return [
+        KnowledgeChunk(
+            text=text,
+            source_type="image",
+            source_uri=file_path,
+            metadata={"source_type": "image", "source_uri": file_path, "provider": "gemini", "model": model_id},
         )
-    if not chunks:
-        # Fallback to a single chunk if paragraph split yields nothing
-        chunks.append(
-            KnowledgeChunk(
-                text=full_text,
-                source_type="image",
-                source_uri=file_path,
-                metadata={"source_type": "image", "source_uri": file_path, "provider": "ocr"},
-            )
-        )
-    return chunks
+    ]
 
 
-def transcribe_audio_to_text(file_path: str, provider: str = "whisper") -> List[KnowledgeChunk]:
+async def transcribe_audio_to_text(file_path: str, provider: str = "whisper") -> List[KnowledgeChunk]:
     """Transcribe audio into text. Supports whisper CLI, OpenAI, and Gemini.
 
     Returns a list of one or more chunks. For API-based providers we return a
@@ -270,30 +258,36 @@ def transcribe_audio_to_text(file_path: str, provider: str = "whisper") -> List[
         model_id = os.getenv("GEMINI_ASR_MODEL", os.getenv("GEMINI_DEFAULT_MODEL", "gemini-1.5-flash"))
         mime_type, _ = mimetypes.guess_type(file_path)
         mime_type = mime_type or "audio/webm"
-        with open(file_path, "rb") as f:
-            audio_bytes = f.read()
+        def _read_file():
+            with open(file_path, "rb") as f:
+                return f.read()
+        
+        audio_bytes = await asyncio.to_thread(_read_file)
         try:
             from google.genai import Client  # lazy import
         except Exception as exc:  # pragma: no cover
             raise RuntimeError("google-genai package is required for Gemini ASR.") from exc
-        client = Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=model_id,
-            contents=[
-                {
-                    "role": "user",
-                    "parts": [
-                        {"text": "Transcribe the following audio to text. Reply with plain text only."},
-                        {
-                            "inline_data": {
-                                "mime_type": mime_type,
-                                "data": base64.b64encode(audio_bytes).decode("utf-8"),
-                            }
-                        },
-                    ],
-                }
-            ],
-        )
+        def _call_gemini_audio_api():
+            client = Client(api_key=api_key)
+            return client.models.generate_content(
+                model=model_id,
+                contents=[
+                    {
+                        "role": "user",
+                        "parts": [
+                            {"text": "Transcribe the following audio to text. Reply with plain text only."},
+                            {
+                                "inline_data": {
+                                    "mime_type": mime_type,
+                                    "data": base64.b64encode(audio_bytes).decode("utf-8"),
+                                }
+                            },
+                        ],
+                    }
+                ],
+            )
+        
+        response = await asyncio.to_thread(_call_gemini_audio_api)
         text = (getattr(response, "text", None) or "").strip()
         text = redact_pii(text)
         return [
@@ -314,17 +308,20 @@ def transcribe_audio_to_text(file_path: str, provider: str = "whisper") -> List[
             import requests  # lazy import
         except Exception as exc:  # pragma: no cover
             raise RuntimeError("The 'requests' package is required for OpenAI ASR.") from exc
-        with open(file_path, "rb") as f:
-            files = {"file": (os.path.basename(file_path), f, "application/octet-stream")}
-            data = {"model": model}
-            headers = {"Authorization": f"Bearer {api_key}"}
-            resp = requests.post(
-                "https://api.openai.com/v1/audio/transcriptions",
-                headers=headers,
-                data=data,
-                files=files,
-                timeout=120,
-            )
+        def _read_and_call_openai_audio_api():
+            with open(file_path, "rb") as f:
+                files = {"file": (os.path.basename(file_path), f, "application/octet-stream")}
+                data = {"model": model}
+                headers = {"Authorization": f"Bearer {api_key}"}
+                return requests.post(
+                    "https://api.openai.com/v1/audio/transcriptions",
+                    headers=headers,
+                    data=data,
+                    files=files,
+                    timeout=120,
+                )
+        
+        resp = await asyncio.to_thread(_read_and_call_openai_audio_api)
         if resp.status_code >= 300:
             raise RuntimeError(f"OpenAI transcription failed: {resp.status_code} {resp.text}")
         text = (resp.json() or {}).get("text", "").strip()

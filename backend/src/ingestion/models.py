@@ -19,7 +19,13 @@ class KnowledgeChunk(BaseModel):
 
 
 class IngestResponse(BaseModel):
+    """Enhanced response model for upload operations with status indicators.
+    
+    Maintains backward compatibility while adding user-friendly status information.
+    """
     inserted: int
     ids: List[str]
+    status: Literal["success", "processing", "error", "unavailable"] = "success"
+    message: str = "Upload completed successfully"
 
 

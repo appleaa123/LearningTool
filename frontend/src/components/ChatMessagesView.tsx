@@ -12,6 +12,7 @@ import {
   ActivityTimeline,
   ProcessedEvent,
 } from "@/components/ActivityTimeline"; // Assuming ActivityTimeline is in the same dir or adjust path
+import { ChatMessage } from "@/services/chatService";
 
 // Markdown component props type compatible with ReactMarkdown
 type MdComponentProps = React.HTMLAttributes<HTMLElement> & {
@@ -229,6 +230,10 @@ interface ChatMessagesViewProps {
   onCancel: () => void;
   liveActivityEvents: ProcessedEvent[];
   historicalActivities: Record<string, ProcessedEvent[]>;
+  // Optional chat history props for REQ-004 enhancement
+  chatHistory?: ChatMessage[];
+  chatHistoryLoading?: boolean;
+  currentSessionId?: number | null;
 }
 
 export const ChatMessagesView = React.memo(function ChatMessagesView({
@@ -239,6 +244,9 @@ export const ChatMessagesView = React.memo(function ChatMessagesView({
   onCancel,
   liveActivityEvents,
   historicalActivities,
+  chatHistory = [],
+  chatHistoryLoading = false,
+  currentSessionId,
 }: ChatMessagesViewProps) {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
 
@@ -251,12 +259,38 @@ export const ChatMessagesView = React.memo(function ChatMessagesView({
       console.error("Failed to copy text: ", err);
     }
   };
+
+  // Convert chat history to Message format for unified rendering
+  const convertChatHistoryToMessages = (history: ChatMessage[]): Message[] => {
+    return history.map((msg) => ({
+      id: `history-${msg.id}`,
+      type: msg.type === 'user' ? 'human' as const : 'ai' as const,
+      content: msg.content,
+      // Add sources info for AI messages if available
+      ...(msg.sources && msg.sources.length > 0 && {
+        sources: msg.sources
+      })
+    }));
+  };
+
+  // Combine chat history with current live messages
+  const allMessages = React.useMemo(() => {
+    const historyMessages = convertChatHistoryToMessages(chatHistory);
+    return [...historyMessages, ...messages];
+  }, [chatHistory, messages]);
   return (
     <div className="flex flex-col h-full">
       <ScrollArea className="flex-1 overflow-y-auto" ref={scrollAreaRef}>
         <div className="p-4 md:p-6 space-y-2 max-w-4xl mx-auto pt-16">
-          {messages.map((message, index) => {
-            const isLast = index === messages.length - 1;
+          {/* Show loading indicator for chat history */}
+          {chatHistoryLoading && (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="animate-spin h-5 w-5 text-neutral-400" />
+              <span className="ml-2 text-sm text-neutral-400">Loading chat history...</span>
+            </div>
+          )}
+          {allMessages.map((message, index) => {
+            const isLast = index === allMessages.length - 1;
             return (
               <div key={message.id || `msg-${index}`} className="space-y-3">
                 <div
@@ -286,8 +320,8 @@ export const ChatMessagesView = React.memo(function ChatMessagesView({
             );
           })}
           {isLoading &&
-            (messages.length === 0 ||
-              messages[messages.length - 1].type === "human") && (
+            (allMessages.length === 0 ||
+              allMessages[allMessages.length - 1].type === "human") && (
               <div className="flex items-start gap-3 mt-3">
                 {" "}
                 {/* AI message row structure */}

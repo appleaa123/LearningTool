@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import secrets
@@ -30,23 +31,62 @@ from src.ingestion.transformations import run_transformations_in_background
 from sqlmodel import Session, select
 from src.services.db import get_session
 from src.services.models import Notebook
+from src.services.topic_suggestion import TopicSuggestionService
 
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
 
-def _resolve_notebook_id(session: Session, user_id: str, notebook_id: int | None) -> int:
+async def _generate_topics_in_background(
+    user_id: str,
+    notebook_id: int, 
+    chunks: list,
+    source_type: str,
+    source_filename: str | None = None
+) -> None:
+    """Generate topic suggestions in the background after content ingestion."""
+    try:
+        # Use session scope context manager for background processing
+        from src.services.db import session_scope
+        
+        with session_scope() as session:
+            service = TopicSuggestionService(session)
+            
+            # Combine all chunk text for topic generation
+            combined_content = "\n\n".join(chunk.text for chunk in chunks)
+            
+            # Generate topics (this is async and may take a few seconds)
+            await service.generate_topics_for_content(
+                content=combined_content,
+                source_type=source_type,
+                notebook_id=notebook_id,
+                source_filename=source_filename,
+                max_topics=3  # Default max, preferences will override if needed
+            )
+            
+    except Exception as e:
+        # Log error but don't fail the ingestion
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Topic generation failed for notebook {notebook_id}: {e}")
+
+
+async def _resolve_notebook_id(session: Session, user_id: str, notebook_id: int | None) -> int:
     if notebook_id is not None:
         return notebook_id
-    # Default notebook per user (create if missing)
-    existing = session.exec(select(Notebook).where(Notebook.user_id == user_id, Notebook.name == "Default")).first()
-    if existing:
-        return int(existing.id)  # type: ignore[arg-type]
-    nb = Notebook(user_id=user_id, name="Default")
-    session.add(nb)
-    session.commit()
-    session.refresh(nb)
-    return int(nb.id)  # type: ignore[arg-type]
+    
+    # Wrap database operations in async thread to prevent blocking
+    def _db_operations():
+        existing = session.exec(select(Notebook).where(Notebook.user_id == user_id, Notebook.name == "Default")).first()
+        if existing:
+            return int(existing.id)  # type: ignore[arg-type]
+        nb = Notebook(user_id=user_id, name="Default")
+        session.add(nb)
+        session.commit()
+        session.refresh(nb)
+        return int(nb.id)  # type: ignore[arg-type]
+    
+    return await asyncio.to_thread(_db_operations)
 
 
 @router.post("/text", response_model=IngestResponse)
@@ -55,14 +95,32 @@ async def ingest_text_endpoint(
     text: str = Form(...),
     user_id: str = Form("anon"),
     notebook_id: int | None = Form(None),
+    suggest_topics: bool = Form(False),
     session: Session = Depends(get_session),
 ):
-    nid = _resolve_notebook_id(session, user_id, notebook_id)
+    nid = await _resolve_notebook_id(session, user_id, notebook_id)
     chunk = KnowledgeChunk(text=text, source_type="text", metadata={"ingest": "text"})
     ids = await ingest_chunks([chunk], user_id, notebook_id=nid)
+    
     # Background transformations linked to notebook
     run_transformations_in_background(background_tasks, user_id=user_id, notebook_id=nid, chunk_ids=ids, chunk_texts=[chunk.text])
-    return IngestResponse(inserted=len(ids), ids=ids)
+    
+    # Background topic generation if requested
+    if suggest_topics:
+        background_tasks.add_task(
+            _generate_topics_in_background,
+            user_id=user_id,
+            notebook_id=nid,
+            chunks=[chunk],
+            source_type="text"
+        )
+    
+    return IngestResponse(
+        inserted=len(ids), 
+        ids=ids,
+        status="success",
+        message="Text content uploaded and ready for use!"
+    )
 
 
 def _sanitize_filename(filename: str) -> str:
@@ -101,7 +159,7 @@ def _is_allowed_content_type(content_type: str | None) -> bool:
     return False
 
 
-def _save_upload(file: UploadFile) -> str:
+async def _save_upload(file: UploadFile) -> str:
     """Stream the uploaded file to disk with validation and unique name.
 
     - Enforces allowlisted content types
@@ -116,11 +174,15 @@ def _save_upload(file: UploadFile) -> str:
         )
 
     tmp_dir = os.getenv("UPLOAD_TMP_DIR", "/tmp")
-    Path(tmp_dir).mkdir(parents=True, exist_ok=True)
+    # Use asyncio.to_thread to make mkdir non-blocking
+    await asyncio.to_thread(Path(tmp_dir).mkdir, parents=True, exist_ok=True)
     out_path = _unique_path(tmp_dir, file.filename or "upload.bin")
 
     bytes_written = 0
-    try:
+    
+    def _write_file():
+        """Write file chunks synchronously (wrapped in asyncio.to_thread)."""
+        nonlocal bytes_written
         with open(out_path, "wb") as f:
             while True:
                 chunk = file.file.read(1024 * 1024)  # 1MB
@@ -133,6 +195,9 @@ def _save_upload(file: UploadFile) -> str:
                         detail="File exceeds 50MB limit",
                     )
                 f.write(chunk)
+    
+    try:
+        await asyncio.to_thread(_write_file)
     except HTTPException:
         # Cleanup partial file on validation failure
         try:
@@ -157,14 +222,15 @@ async def ingest_document_endpoint(
     user_id: str = Form("anon"),
     notebook_id: int | None = Form(None),
     document_provider: str | None = Form(None),
+    suggest_topics: bool = Form(False),
     session: Session = Depends(get_session),
 ):
     defaults = get_ingestion_defaults()
     provider = (document_provider or defaults["document_processor"]).lower()
     try:
-        path = _save_upload(file)
-        chunks = extract_text_from_document(path, provider=provider)
-        nid = _resolve_notebook_id(session, user_id, notebook_id)
+        path = await _save_upload(file)
+        chunks = await extract_text_from_document(path, provider=provider)
+        nid = await _resolve_notebook_id(session, user_id, notebook_id)
         ids = await ingest_chunks(chunks, user_id, notebook_id=nid)
     except HTTPException:
         raise
@@ -176,7 +242,24 @@ async def ingest_document_endpoint(
 
     # Schedule background content transformations (persisted per notebook/chunk)
     run_transformations_in_background(background_tasks, user_id=user_id, notebook_id=nid, chunk_ids=ids, chunk_texts=[c.text for c in chunks])
-    return IngestResponse(inserted=len(ids), ids=ids)
+    
+    # Background topic generation if requested
+    if suggest_topics:
+        background_tasks.add_task(
+            _generate_topics_in_background,
+            user_id=user_id,
+            notebook_id=nid,
+            chunks=chunks,
+            source_type="document",
+            source_filename=file.filename
+        )
+    
+    return IngestResponse(
+        inserted=len(ids), 
+        ids=ids,
+        status="success",
+        message="Document uploaded and processed successfully. Ready for use!"
+    )
 
 
 @router.post("/image", response_model=IngestResponse)
@@ -186,15 +269,16 @@ async def ingest_image_endpoint(
     user_id: str = Form("anon"),
     notebook_id: int | None = Form(None),
     vision_provider: str | None = Form(None),
+    suggest_topics: bool = Form(False),
     session: Session = Depends(get_session),
 ):
     defaults = get_ingestion_defaults()
     provider = (vision_provider or defaults["image_processor"]).lower()
     print(f"DEBUG ROUTER: vision_provider={vision_provider}, defaults={defaults}, final_provider={provider}")
     try:
-        path = _save_upload(file)
-        chunks = extract_text_from_image(path, provider=provider)
-        nid = _resolve_notebook_id(session, user_id, notebook_id)
+        path = await _save_upload(file)
+        chunks = await extract_text_from_image(path, provider=provider)
+        nid = await _resolve_notebook_id(session, user_id, notebook_id)
         ids = await ingest_chunks(chunks, user_id, notebook_id=nid)
     except HTTPException:
         raise
@@ -204,7 +288,24 @@ async def ingest_image_endpoint(
         raise HTTPException(status_code=400, detail=f"Failed to ingest image: {exc}")
 
     run_transformations_in_background(background_tasks, user_id=user_id, notebook_id=nid, chunk_ids=ids, chunk_texts=[c.text for c in chunks])
-    return IngestResponse(inserted=len(ids), ids=ids)
+    
+    # Background topic generation if requested
+    if suggest_topics:
+        background_tasks.add_task(
+            _generate_topics_in_background,
+            user_id=user_id,
+            notebook_id=nid,
+            chunks=chunks,
+            source_type="image",
+            source_filename=file.filename
+        )
+    
+    return IngestResponse(
+        inserted=len(ids), 
+        ids=ids,
+        status="success",
+        message="Image uploaded and processed successfully. Ready for use!"
+    )
 
 
 @router.post("/audio", response_model=IngestResponse)
@@ -216,28 +317,16 @@ async def ingest_audio_endpoint(
     asr_provider: str = Form("whisper"),
     session: Session = Depends(get_session),
 ):
-    """Ingest audio by transcribing with the selected ASR provider.
-
-    Args:
-        file: Uploaded audio blob (e.g., audio/webm).
-        user_id: User scope for the LightRAG store.
-        asr_provider: "whisper" (default), "openai", or "gemini".
+    """Audio upload endpoint - currently disabled for development.
+    
+    Returns development message indicating feature is under development.
     """
-    defaults = get_ingestion_defaults()
-    provider = (asr_provider or defaults["audio_asr_provider"]).lower()
-    try:
-        path = _save_upload(file)
-        chunks = transcribe_audio_to_text(path, provider=provider)
-        nid = _resolve_notebook_id(session, user_id, notebook_id)
-        ids = await ingest_chunks(chunks, user_id, notebook_id=nid)
-    except HTTPException:
-        raise
-    except (RuntimeError, ValueError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Failed to ingest audio: {exc}")
-
-    run_transformations_in_background(background_tasks, user_id=user_id, notebook_id=nid, chunk_ids=ids, chunk_texts=[c.text for c in chunks])
-    return IngestResponse(inserted=len(ids), ids=ids)
+    # REQ-001: Audio upload disabled with development message
+    return IngestResponse(
+        inserted=0,
+        ids=[],
+        status="unavailable",
+        message="Sorry, this feature is under development and will be live soon!"
+    )
 
 
