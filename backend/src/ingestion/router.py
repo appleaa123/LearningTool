@@ -115,7 +115,12 @@ async def ingest_text_endpoint(
             source_type="text"
         )
     
-    return IngestResponse(inserted=len(ids), ids=ids)
+    return IngestResponse(
+        inserted=len(ids), 
+        ids=ids,
+        status="success",
+        message="Text content uploaded and ready for use!"
+    )
 
 
 def _sanitize_filename(filename: str) -> str:
@@ -249,7 +254,12 @@ async def ingest_document_endpoint(
             source_filename=file.filename
         )
     
-    return IngestResponse(inserted=len(ids), ids=ids)
+    return IngestResponse(
+        inserted=len(ids), 
+        ids=ids,
+        status="success",
+        message="Document uploaded and processed successfully. Ready for use!"
+    )
 
 
 @router.post("/image", response_model=IngestResponse)
@@ -290,7 +300,12 @@ async def ingest_image_endpoint(
             source_filename=file.filename
         )
     
-    return IngestResponse(inserted=len(ids), ids=ids)
+    return IngestResponse(
+        inserted=len(ids), 
+        ids=ids,
+        status="success",
+        message="Image uploaded and processed successfully. Ready for use!"
+    )
 
 
 @router.post("/audio", response_model=IngestResponse)
@@ -302,28 +317,16 @@ async def ingest_audio_endpoint(
     asr_provider: str = Form("whisper"),
     session: Session = Depends(get_session),
 ):
-    """Ingest audio by transcribing with the selected ASR provider.
-
-    Args:
-        file: Uploaded audio blob (e.g., audio/webm).
-        user_id: User scope for the LightRAG store.
-        asr_provider: "whisper" (default), "openai", or "gemini".
+    """Audio upload endpoint - currently disabled for development.
+    
+    Returns development message indicating feature is under development.
     """
-    defaults = get_ingestion_defaults()
-    provider = (asr_provider or defaults["audio_asr_provider"]).lower()
-    try:
-        path = await _save_upload(file)
-        chunks = await transcribe_audio_to_text(path, provider=provider)
-        nid = await _resolve_notebook_id(session, user_id, notebook_id)
-        ids = await ingest_chunks(chunks, user_id, notebook_id=nid)
-    except HTTPException:
-        raise
-    except (RuntimeError, ValueError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Failed to ingest audio: {exc}")
-
-    run_transformations_in_background(background_tasks, user_id=user_id, notebook_id=nid, chunk_ids=ids, chunk_texts=[c.text for c in chunks])
-    return IngestResponse(inserted=len(ids), ids=ids)
+    # REQ-001: Audio upload disabled with development message
+    return IngestResponse(
+        inserted=0,
+        ids=[],
+        status="unavailable",
+        message="Sorry, this feature is under development and will be live soon!"
+    )
 
 

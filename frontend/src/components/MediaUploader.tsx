@@ -47,7 +47,7 @@ export function MediaUploader({ userId = "anon", providers, notebookId, onSucces
         const text = await res.text();
         throw new Error(text || `Upload failed with status ${res.status}`);
       }
-      const data: { inserted: number; ids: string[] } = await res.json();
+      const data: { inserted: number; ids: string[]; status?: string; message?: string } = await res.json();
       setIds(data.ids);
       onSuccess?.(data.ids);
     } catch (e: unknown) {
@@ -80,7 +80,7 @@ export function MediaUploader({ userId = "anon", providers, notebookId, onSucces
         )}
         {ids && (
           <div className="text-green-400 text-sm bg-green-950/40 border border-green-700 rounded p-2">
-            Uploaded. IDs: {ids.join(", ")}
+            {file?.name} uploaded and ready for use!
           </div>
         )}
         <div className="flex gap-2">

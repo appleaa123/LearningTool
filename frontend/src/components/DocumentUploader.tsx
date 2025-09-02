@@ -21,7 +21,7 @@ export function DocumentUploader({
   notebookId,
   onSuccess,
   onError,
-  enableTopicSuggestions = true,
+  enableTopicSuggestions = false,
 }: DocumentUploaderProps) {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -50,10 +50,9 @@ export function DocumentUploader({
       form.append("user_id", userId);
       if (notebookId != null) form.append("notebook_id", String(notebookId));
       
-      // Add topic suggestion parameter if enabled
-      if (enableTopicSuggestions) {
-        form.append("suggest_topics", "true");
-      }
+      // Keep topic generation in background but hide from upload UI
+      // Topics will appear in Research Topics tab instead of upload interface
+      form.append("suggest_topics", "true");
       
       const res = await fetch(`${apiBase}/ingest/document`, {
         method: "POST",
@@ -65,14 +64,12 @@ export function DocumentUploader({
         throw new Error(text || `Upload failed with status ${res.status}`);
       }
       
-      const data: { inserted: number; ids: string[] } = await res.json();
+      const data: { inserted: number; ids: string[]; status?: string; message?: string } = await res.json();
       setIds(data.ids);
       onSuccess?.(data.ids);
       
-      // Start polling for topic suggestions if enabled
-      if (enableTopicSuggestions) {
-        pollForTopicSuggestions();
-      }
+      // Topic suggestions disabled in upload UI
+      // Topics are generated in background and appear in Research Topics tab
       
     } catch (e: unknown) {
       const msg = (e as AudioRecordingError)?.message || "Failed to upload document";
@@ -159,7 +156,7 @@ export function DocumentUploader({
         )}
         {ids && (
           <div className="text-green-400 text-sm bg-green-950/40 border border-green-700 rounded p-2">
-            Uploaded. IDs: {ids.join(", ")}
+            {file?.name} uploaded and ready for use!
           </div>
         )}
         <div className="flex gap-2">
