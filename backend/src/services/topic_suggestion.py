@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -77,21 +78,15 @@ class TopicSuggestionService:
                     )
                     suggested_topics.append(topic)
             
-            # Store in database
-            for topic in suggested_topics:
-                self.session.add(topic)
-            self.session.commit()
-            
-            # Refresh objects to get IDs
-            for topic in suggested_topics:
-                self.session.refresh(topic)
+            # Store in database using async thread to prevent blocking
+            await asyncio.to_thread(self._store_topics_sync, suggested_topics)
             
             logger.info(f"Generated {len(suggested_topics)} topic suggestions for notebook {notebook_id}")
             return suggested_topics
             
         except Exception as e:
             logger.error(f"Failed to generate topics for notebook {notebook_id}: {e}")
-            self.session.rollback()
+            await asyncio.to_thread(self.session.rollback)
             return []
     
     async def _call_gemini_for_topics(
@@ -174,11 +169,14 @@ Guidelines:
     
     async def _get_or_create_preferences(self, notebook_id: int) -> TopicSuggestionPreference:
         """Get or create topic suggestion preferences for a notebook."""
-        preferences = self.session.exec(
-            select(TopicSuggestionPreference).where(
-                TopicSuggestionPreference.notebook_id == notebook_id
-            )
-        ).first()
+        # Use async thread to prevent blocking ASGI event loop
+        preferences = await asyncio.to_thread(
+            lambda: self.session.exec(
+                select(TopicSuggestionPreference).where(
+                    TopicSuggestionPreference.notebook_id == notebook_id
+                )
+            ).first()
+        )
         
         if not preferences:
             preferences = TopicSuggestionPreference(
@@ -190,9 +188,7 @@ Guidelines:
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
             )
-            self.session.add(preferences)
-            self.session.commit()
-            self.session.refresh(preferences)
+            await asyncio.to_thread(self._create_preferences_sync, preferences)
         
         return preferences
     
@@ -202,55 +198,63 @@ Guidelines:
         limit: int = 10
     ) -> List[SuggestedTopic]:
         """Get pending topic suggestions for a notebook."""
-        topics = self.session.exec(
-            select(SuggestedTopic)
-            .where(
-                SuggestedTopic.notebook_id == notebook_id,
-                SuggestedTopic.status == TopicStatus.pending
-            )
-            .order_by(SuggestedTopic.priority_score.desc(), SuggestedTopic.created_at.desc())
-            .limit(limit)
-        ).all()
+        # Use async thread to prevent blocking ASGI event loop
+        topics = await asyncio.to_thread(
+            lambda: self.session.exec(
+                select(SuggestedTopic)
+                .where(
+                    SuggestedTopic.notebook_id == notebook_id,
+                    SuggestedTopic.status == TopicStatus.pending
+                )
+                .order_by(SuggestedTopic.priority_score.desc(), SuggestedTopic.created_at.desc())
+                .limit(limit)
+            ).all()
+        )
         
         return list(topics)
     
     async def accept_topic(self, topic_id: int, notebook_id: int) -> Optional[SuggestedTopic]:
         """Accept a topic suggestion and mark for research."""
-        topic = self.session.exec(
-            select(SuggestedTopic).where(
-                SuggestedTopic.id == topic_id,
-                SuggestedTopic.notebook_id == notebook_id,
-                SuggestedTopic.status == TopicStatus.pending
-            )
-        ).first()
+        # Use async thread to prevent blocking ASGI event loop
+        topic = await asyncio.to_thread(
+            lambda: self.session.exec(
+                select(SuggestedTopic).where(
+                    SuggestedTopic.id == topic_id,
+                    SuggestedTopic.notebook_id == notebook_id,
+                    SuggestedTopic.status == TopicStatus.pending
+                )
+            ).first()
+        )
         
         if not topic:
             return None
         
         topic.status = TopicStatus.accepted
         topic.updated_at = datetime.utcnow()
-        self.session.commit()
-        self.session.refresh(topic)
+        await asyncio.to_thread(self._commit_and_refresh, topic)
         
         logger.info(f"Topic {topic_id} accepted for notebook {notebook_id}")
         return topic
     
     async def reject_topic(self, topic_id: int, notebook_id: int) -> Optional[SuggestedTopic]:
         """Reject a topic suggestion."""
-        topic = self.session.exec(
-            select(SuggestedTopic).where(
-                SuggestedTopic.id == topic_id,
-                SuggestedTopic.notebook_id == notebook_id,
-                SuggestedTopic.status == TopicStatus.pending
-            )
-        ).first()
+        # Use async thread to prevent blocking ASGI event loop
+        topic = await asyncio.to_thread(
+            lambda: self.session.exec(
+                select(SuggestedTopic).where(
+                    SuggestedTopic.id == topic_id,
+                    SuggestedTopic.notebook_id == notebook_id,
+                    SuggestedTopic.status == TopicStatus.pending
+                )
+            ).first()
+        )
         
         if not topic:
             return None
         
         topic.status = TopicStatus.rejected
         topic.updated_at = datetime.utcnow()
-        self.session.commit()
+        await asyncio.to_thread(self.session.commit)
         
         logger.info(f"Topic {topic_id} rejected for notebook {notebook_id}")
         return topic
@@ -274,7 +278,27 @@ Guidelines:
                 setattr(preferences, field, value)
         
         preferences.updated_at = datetime.utcnow()
-        self.session.commit()
-        self.session.refresh(preferences)
+        await asyncio.to_thread(self._commit_and_refresh, preferences)
         
         return preferences
+
+    def _store_topics_sync(self, topics: List[SuggestedTopic]) -> None:
+        """Synchronous helper to store topics in database."""
+        for topic in topics:
+            self.session.add(topic)
+        self.session.commit()
+        
+        # Refresh objects to get IDs
+        for topic in topics:
+            self.session.refresh(topic)
+    
+    def _create_preferences_sync(self, preferences: TopicSuggestionPreference) -> None:
+        """Synchronous helper to create preferences in database."""
+        self.session.add(preferences)
+        self.session.commit()
+        self.session.refresh(preferences)
+    
+    def _commit_and_refresh(self, obj: Any) -> None:
+        """Synchronous helper to commit and refresh database object."""
+        self.session.commit()
+        self.session.refresh(obj)

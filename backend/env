@@ -6,6 +6,10 @@ GET_API_KEYS_FROM_CONFIG=true
 # Image processing: use Gemini Vision API instead of tesseract OCR
 INGEST_IMAGE_PROCESSOR=gemini
 
+# ASGI Compliance: Allow blocking operations in development/testing
+# For production deployment: Set BG_JOB_ISOLATED_LOOPS=true instead of --allow-blocking
+# BG_JOB_ISOLATED_LOOPS=true
+
 # OpenAI or OpenRouter (OpenAI-compatible)
 OPENAI_API_KEY= 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
 # To use OpenRouter with openai:* models

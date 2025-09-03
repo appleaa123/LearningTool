@@ -1,23 +1,46 @@
 import { useStream } from "@langchain/langgraph-sdk/react";
 import type { Message } from "@langchain/langgraph-sdk";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Suspense, lazy } from "react";
 import { ProcessedEvent } from "@/components/ActivityTimeline";
 import { LangGraphEvent, ProviderAvailability } from "@/types/langgraph";
 import { WelcomeScreen } from "@/components/WelcomeScreen";
-import { ChatMessagesView } from "@/components/ChatMessagesView";
-import { KnowledgeFeed } from "@/components/KnowledgeFeed";
-import { TopicSuggestions } from "@/components/TopicSuggestions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { MediaUploader } from "@/components/MediaUploader";
-import { AudioRecorder } from "@/components/AudioRecorder";
-import { DocumentUploader } from "@/components/DocumentUploader";
 import { NotebookSelector } from "@/components/NotebookSelector";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { MessageCircle, Grid, Target, Plus } from 'lucide-react';
 import { topicService } from "@/services/topicService";
 import { chatService, ChatMessage } from "@/services/chatService";
+import { featureFlags } from "@/utils/featureFlags";
+
+// Dynamic imports for code splitting - only load when needed
+const ChatMessagesView = lazy(() => 
+  featureFlags.isEnabled('enableDynamicImports') 
+    ? import("@/components/ChatMessagesView").then(module => ({ default: module.ChatMessagesView }))
+    : import("@/components/ChatMessagesView").then(module => ({ default: module.ChatMessagesView }))
+);
+
+const KnowledgeFeed = lazy(() => 
+  import("@/components/KnowledgeFeed").then(module => ({ default: module.KnowledgeFeed }))
+);
+
+const TopicSuggestions = lazy(() => 
+  import("@/components/TopicSuggestions").then(module => ({ default: module.TopicSuggestions }))
+);
+
+// Upload components - heavy dependencies, lazy load on demand
+const MediaUploader = lazy(() => import("@/components/MediaUploader").then(module => ({ default: module.MediaUploader })));
+const AudioRecorder = lazy(() => import("@/components/AudioRecorder").then(module => ({ default: module.AudioRecorder })));
+const DocumentUploader = lazy(() => import("@/components/DocumentUploader").then(module => ({ default: module.DocumentUploader })));
+
+// Loading fallback component
+const LoadingFallback = ({ text = "Loading..." }: { text?: string }) => (
+  <div className="flex items-center justify-center p-8">
+    <div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full mr-3"></div>
+    <span className="text-muted-foreground">{text}</span>
+  </div>
+);
 
 export default function App() {
   const [processedEventsTimeline, setProcessedEventsTimeline] = useState<
@@ -37,7 +60,7 @@ export default function App() {
   // Navigation and view state
   const [activeView, setActiveView] = useState<'chat' | 'feed' | 'topics'>('chat');
   const [pendingTopicsCount, setPendingTopicsCount] = useState(0);
-  const [recentFeedItemsCount, setRecentFeedItemsCount] = useState(0);
+  const [recentFeedItemsCount] = useState(0);
   const [hasDeepResearchContent, setHasDeepResearchContent] = useState(false);
   
   // Topics state for Topics view
@@ -47,7 +70,6 @@ export default function App() {
   
   // Chat history state - preserves LangGraph streaming while adding persistence
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
-  const [currentSessionId, setCurrentSessionId] = useState<number | null>(null);
   const [chatHistoryLoading, setChatHistoryLoading] = useState(false);
   
   // User ID for consistent data access (derived from thread or default)
@@ -170,7 +192,6 @@ export default function App() {
     const loadChatHistory = async () => {
       if (!notebookId) {
         setChatHistory([]);
-        setCurrentSessionId(null);
         return;
       }
 
@@ -182,14 +203,12 @@ export default function App() {
         setChatHistory(messages);
         
         // Get or create session for future messages
-        const sessionResponse = await chatService.getOrCreateSession(userId, notebookId);
-        setCurrentSessionId(sessionResponse.session_id);
+        await chatService.getOrCreateSession(userId, notebookId);
         
       } catch (error) {
         console.warn('Failed to load chat history:', error);
         // Don't show error to user - chat history is optional enhancement
         setChatHistory([]);
-        setCurrentSessionId(null);
       } finally {
         setChatHistoryLoading(false);
       }
@@ -416,18 +435,19 @@ export default function App() {
                         </p>
                       </div>
                     )}
-                    <ChatMessagesView
-                      messages={thread.messages}
-                      isLoading={thread.isLoading}
-                      scrollAreaRef={scrollAreaRef}
-                      onSubmit={handleSubmit}
-                      onCancel={handleCancel}
-                      liveActivityEvents={processedEventsTimeline}
-                      historicalActivities={historicalActivities}
-                      chatHistory={chatHistory}
-                      chatHistoryLoading={chatHistoryLoading}
-                      currentSessionId={currentSessionId}
-                    />
+                    <Suspense fallback={<LoadingFallback text="Loading chat..." />}>
+                      <ChatMessagesView
+                        messages={thread.messages}
+                        isLoading={thread.isLoading}
+                        scrollAreaRef={scrollAreaRef}
+                        onSubmit={handleSubmit}
+                        onCancel={handleCancel}
+                        liveActivityEvents={processedEventsTimeline}
+                        historicalActivities={historicalActivities}
+                        chatHistory={chatHistory}
+                        chatHistoryLoading={chatHistoryLoading}
+                      />
+                    </Suspense>
                   </div>
                 </ErrorBoundary>
               )}
@@ -437,13 +457,15 @@ export default function App() {
           {activeView === 'feed' && (
             <ErrorBoundary>
               <div className="h-full overflow-auto">
-                <KnowledgeFeed
-                  userId={userId}
-                  notebookId={notebookId ?? undefined}
-                  className="px-4 py-6"
-                  showFilters={true}
-                  onTopicClick={handleTopicClick}
-                />
+                <Suspense fallback={<LoadingFallback text="Loading knowledge feed..." />}>
+                  <KnowledgeFeed
+                    userId={userId}
+                    notebookId={notebookId ?? undefined}
+                    className="px-4 py-6"
+                    showFilters={true}
+                    onTopicClick={handleTopicClick}
+                  />
+                </Suspense>
               </div>
             </ErrorBoundary>
           )}
@@ -459,13 +481,15 @@ export default function App() {
                     </p>
                   </div>
                   
-                  <TopicSuggestions
-                    topics={topics}
-                    onAcceptTopic={handleAcceptTopic}
-                    onRejectTopic={handleRejectTopic}
-                    loading={topicsLoading}
-                    error={topicsError}
-                  />
+                  <Suspense fallback={<LoadingFallback text="Loading research topics..." />}>
+                    <TopicSuggestions
+                      topics={topics}
+                      onAcceptTopic={handleAcceptTopic}
+                      onRejectTopic={handleRejectTopic}
+                      loading={topicsLoading}
+                      error={topicsError}
+                    />
+                  </Suspense>
                 </div>
               </div>
             </ErrorBoundary>
@@ -488,33 +512,39 @@ export default function App() {
               <ErrorBoundary>
                 <Card className="p-3 bg-neutral-900 border-neutral-700">
                   <p className="text-sm text-neutral-300 mb-2">Photo upload</p>
-                  <MediaUploader
-                    providers={availableProviders}
-                    notebookId={notebookId ?? undefined}
-                    onSuccess={(ids) => setLastIngestIds(ids)}
-                    onError={(msg) => console.warn(msg)}
-                  />
+                  <Suspense fallback={<LoadingFallback text="Loading media uploader..." />}>
+                    <MediaUploader
+                      providers={availableProviders}
+                      notebookId={notebookId ?? undefined}
+                      onSuccess={(ids) => setLastIngestIds(ids)}
+                      onError={(msg) => console.warn(msg)}
+                    />
+                  </Suspense>
                 </Card>
               </ErrorBoundary>
               <ErrorBoundary>
                 <Card className="p-3 bg-neutral-900 border-neutral-700">
                   <p className="text-sm text-neutral-300 mb-2">Voice input</p>
-                  <AudioRecorder
-                    providers={availableProviders}
-                    notebookId={notebookId ?? undefined}
-                    onSuccess={(ids) => setLastIngestIds(ids)}
-                    onError={(msg) => console.warn(msg)}
-                  />
+                  <Suspense fallback={<LoadingFallback text="Loading audio recorder..." />}>
+                    <AudioRecorder
+                      providers={availableProviders}
+                      notebookId={notebookId ?? undefined}
+                      onSuccess={(ids) => setLastIngestIds(ids)}
+                      onError={(msg) => console.warn(msg)}
+                    />
+                  </Suspense>
                 </Card>
               </ErrorBoundary>
               <ErrorBoundary>
                 <Card className="p-3 bg-neutral-900 border-neutral-700">
                   <p className="text-sm text-neutral-300 mb-2">Document upload</p>
-                  <DocumentUploader
-                    notebookId={notebookId ?? undefined}
-                    onSuccess={(ids) => setLastIngestIds(ids)}
-                    onError={(msg) => console.warn(msg)}
-                  />
+                  <Suspense fallback={<LoadingFallback text="Loading document uploader..." />}>
+                    <DocumentUploader
+                      notebookId={notebookId ?? undefined}
+                      onSuccess={(ids) => setLastIngestIds(ids)}
+                      onError={(msg) => console.warn(msg)}
+                    />
+                  </Suspense>
                 </Card>
               </ErrorBoundary>
               {lastIngestIds && (

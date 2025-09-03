@@ -1,3 +1,7 @@
+import { apiCache } from '@/utils/apiCache';
+import { featureFlags } from '@/utils/featureFlags';
+import { performanceMonitor } from '@/utils/performanceMonitor';
+
 const API_BASE = import.meta.env.DEV ? "/api" : "";
 
 // Feed item types based on backend FeedKind enum
@@ -37,6 +41,8 @@ export interface FeedItemData extends FeedItem {
     difficulty?: 'easy' | 'medium' | 'hard';
     tags?: string[];
     total_cards?: number;
+    study_count?: number;
+    last_studied?: string;
     
     // Research specific
     report?: string;
@@ -55,6 +61,11 @@ export interface FeedItemData extends FeedItem {
     
     // Chunk specific
     source_document?: string;
+    
+    // Additional fields for backward compatibility
+    content?: string;
+    original_text?: string;
+    source_content?: string;
   };
   topic_context?: {
     topic_id: number;
@@ -110,12 +121,27 @@ export class FeedService {
   
   /**
    * Get feed items with cursor-based pagination.
-   * Enhanced with retry logic and better error handling.
+   * Enhanced with retry logic, caching, and better error handling.
    * 
    * @param options - Feed retrieval options including cursor position
    * @returns Promise resolving to paginated feed response
    */
   async getFeed(options: FeedOptions): Promise<FeedResponse> {
+    // Generate cache key for this specific request
+    const cacheKey = this.generateFeedCacheKey(options);
+    const requestId = `getFeed-${Date.now()}-${Math.random()}`;
+    
+    // Try cache first (only for initial loads, not pagination)
+    if (featureFlags.isEnabled('enableApiCaching') && options.cursor === undefined) {
+      const cached = apiCache.get<FeedResponse>(cacheKey);
+      if (cached) {
+        performanceMonitor.endAPIRequest(requestId, '/knowledge/feed', 'GET', true);
+        return cached;
+      }
+    }
+
+    performanceMonitor.startAPIRequest(requestId, '/knowledge/feed', 'GET');
+
     return this.withRetry(async () => {
       const params = new URLSearchParams({
         user_id: options.userId,
@@ -155,12 +181,21 @@ export class FeedService {
         throw new Error('Invalid feed response structure');
       }
       
+      // Cache successful response (only initial loads, not pagination)
+      if (featureFlags.isEnabled('enableApiCaching') && options.cursor === undefined) {
+        apiCache.set(cacheKey, data, {
+          ttl: 3 * 60 * 1000, // 3 minutes for feed data
+        });
+      }
+      
+      performanceMonitor.endAPIRequest(requestId, '/knowledge/feed', 'GET', false);
       return data;
     });
   }
 
   /**
    * Get full content for a specific feed item with topic context.
+   * Enhanced with caching for better performance.
    * 
    * @param itemId - Feed item ID
    * @param userId - User ID for access control
@@ -172,6 +207,17 @@ export class FeedService {
     userId: string, 
     includeTopicContext: boolean = true
   ): Promise<FeedContentResponse> {
+    // Generate cache key for this specific content request
+    const cacheKey = `feed-content:${itemId}:${userId}:${includeTopicContext}`;
+    
+    // Try cache first
+    if (featureFlags.isEnabled('enableApiCaching')) {
+      const cached = apiCache.get<FeedContentResponse>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    }
+
     const params = new URLSearchParams({
       user_id: userId,
       include_topic_context: includeTopicContext.toString(),
@@ -195,7 +241,16 @@ export class FeedService {
       const data = await response.json();
       
       // Enhanced content processing and validation
-      return this.processContentResponse(data);
+      const processedData = this.processContentResponse(data);
+      
+      // Cache successful response
+      if (featureFlags.isEnabled('enableApiCaching')) {
+        apiCache.set(cacheKey, processedData, {
+          ttl: 5 * 60 * 1000, // 5 minutes for content data
+        });
+      }
+      
+      return processedData;
       
     } catch (error) {
       if (error instanceof Error && error.name === 'TimeoutError') {
@@ -371,6 +426,40 @@ export class FeedService {
     }
   }
   
+  /**
+   * Generate cache key for feed requests
+   * 
+   * @private
+   * @param options - Feed options to generate key for
+   * @returns Cache key string
+   */
+  private generateFeedCacheKey(options: FeedOptions): string {
+    const keyParts = [
+      'feed',
+      options.userId,
+      options.notebookId?.toString() || 'all',
+      options.filter || 'all',
+      options.search || 'none',
+      options.limit?.toString() || '20'
+    ];
+    return keyParts.join(':');
+  }
+
+  /**
+   * Invalidate feed cache for a specific user/notebook
+   * 
+   * @param userId - User ID to invalidate cache for
+   * @param notebookId - Optional notebook ID for targeted invalidation
+   */
+  invalidateFeedCache(userId: string, notebookId?: number): void {
+    if (featureFlags.isEnabled('enableApiCaching')) {
+      const pattern = notebookId 
+        ? `feed:${userId}:${notebookId}:`
+        : `feed:${userId}:`;
+      apiCache.invalidatePattern(pattern);
+    }
+  }
+
   /**
    * Enhanced error handling for feed operations with retry logic.
    * 
