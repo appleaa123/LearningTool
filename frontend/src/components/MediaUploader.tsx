@@ -17,7 +17,7 @@ type MediaUploaderProps = {
  * Photo/image uploader that posts to /ingest/image and returns inserted IDs.
  * Accepts image/* and prefers the rear camera on mobile via capture="environment".
  */
-export function MediaUploader({ userId = "anon", providers, notebookId, onSuccess, onError }: MediaUploaderProps) {
+export function MediaUploader({ userId = "anon", notebookId, onSuccess, onError }: MediaUploaderProps) {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);

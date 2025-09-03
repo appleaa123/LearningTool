@@ -98,8 +98,8 @@ export const KnowledgeFeed: React.FC<KnowledgeFeedProps> = ({
             // Return item without content rather than failing completely
             return {
               ...item,
-              content: null,
-              source_metadata: { source: 'user_upload', user_initiated: false }
+              content: undefined,
+              source_metadata: { source: 'user_upload' as const, user_initiated: false }
             };
           }
         })

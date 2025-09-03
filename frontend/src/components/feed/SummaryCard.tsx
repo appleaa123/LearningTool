@@ -28,7 +28,8 @@ export const SummaryCard: React.FC<SummaryCardProps> = ({
   const [isExpanded, setIsExpanded] = useState(false);
   
   // Extract summary data with backward compatibility
-  const summary = item.content?.summary || item.content?.content || item.content?.text || 'No summary available';
+  const rawSummary = item.content?.summary || item.content?.content || item.content?.text || 'No summary available';
+  const summary = typeof rawSummary === 'string' ? rawSummary : 'No summary available';
   const keyPoints = item.content?.key_points || [];
   const sourceContent = item.content?.source_content || item.content?.original_text;
   const confidence = item.content?.confidence_score || item.content?.confidence;

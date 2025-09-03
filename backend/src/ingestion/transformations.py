@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import json
@@ -309,61 +310,86 @@ def run_transformations_in_background(
     from src.services.db import session_scope
     from src.services.models import TransformedItem, TransformedType, FeedItem, FeedKind
 
-    def _task() -> None:
+    async def _async_task() -> None:
+        """Async task to handle transformations with non-blocking database operations."""
         artifacts = _run_transformations(chunk_texts)
 
-        with session_scope() as session:
-            # Persist and collect text payloads for LightRAG
-            mirror_texts: List[Dict[str, str]] = []
-            for idx, a in enumerate(artifacts):
-                typ = a["type"]
-                content = a["content"].strip()
-                # Map artifacts back to chunk id by simple round-robin
-                chunk_ref_id: Optional[int] = None
-                try:
-                    # Chunk IDs are synthesized strings from LightRAG insert; DB ids are separate.
-                    # We cannot map precisely without returning DB IDs earlier; leave as None.
-                    chunk_ref_id = None
-                except Exception:
-                    chunk_ref_id = None
-
-                item = TransformedItem(
-                    notebook_id=notebook_id,
-                    chunk_id=chunk_ref_id,
-                    type=TransformedType(typ if typ != "flashcards" else "flashcard"),
-                    text=content,
-                    metadata_json=a.get("metadata", {}),  # Store structured metadata
-                )
-                session.add(item)
-                session.commit()
-                session.refresh(item)
-
-                # Feed entry
-                feed = FeedItem(
-                    notebook_id=notebook_id,
-                    kind=FeedKind.summary if item.type == TransformedType.summary else (
-                        FeedKind.qa if item.type == TransformedType.qa else FeedKind.flashcard
-                    ),
-                    ref_id=item.id,  # type: ignore[arg-type]
-                )
-                session.add(feed)
-                session.commit()
-
-                mirror_texts.append({"text": f"[{item.type.value.upper()}]\n{content}"})
+        # Use async thread for database operations to prevent blocking ASGI
+        mirror_texts = await asyncio.to_thread(
+            _store_artifacts_sync, artifacts, notebook_id
+        )
 
         if mirror_texts:
-            import asyncio
             store = LightRAGStore(user_id=user_id)
             try:
                 # Run async insert in the background task
-                asyncio.run(store.insert(mirror_texts))
+                await store.insert(mirror_texts)
             except Exception as e:
                 # Log the error but don't fail the background task
                 print(f"Warning: Failed to mirror transformations to LightRAG: {e}")
+    
+    def _task() -> None:
+        """Synchronous wrapper for background task compatibility."""
+        # Run the async task in a new event loop to prevent blocking
+        asyncio.run(_async_task())
 
     if background_tasks is not None:
         background_tasks.add_task(_task)
     else:
         _task()
+
+
+def _store_artifacts_sync(
+    artifacts: List[Dict[str, Any]], 
+    notebook_id: int
+) -> List[Dict[str, str]]:
+    """Synchronous helper to store artifacts in database.
+    
+    This function runs in a separate thread to prevent blocking ASGI.
+    Returns mirror_texts for LightRAG insertion.
+    """
+    from src.services.db import session_scope
+    from src.services.models import TransformedItem, TransformedType, FeedItem, FeedKind
+    
+    mirror_texts: List[Dict[str, str]] = []
+    
+    with session_scope() as session:
+        for idx, a in enumerate(artifacts):
+            typ = a["type"]
+            content = a["content"].strip()
+            # Map artifacts back to chunk id by simple round-robin
+            chunk_ref_id: Optional[int] = None
+            try:
+                # Chunk IDs are synthesized strings from LightRAG insert; DB ids are separate.
+                # We cannot map precisely without returning DB IDs earlier; leave as None.
+                chunk_ref_id = None
+            except Exception:
+                chunk_ref_id = None
+
+            item = TransformedItem(
+                notebook_id=notebook_id,
+                chunk_id=chunk_ref_id,
+                type=TransformedType(typ if typ != "flashcards" else "flashcard"),
+                text=content,
+                metadata_json=a.get("metadata", {}),  # Store structured metadata
+            )
+            session.add(item)
+            session.commit()
+            session.refresh(item)
+
+            # Feed entry
+            feed = FeedItem(
+                notebook_id=notebook_id,
+                kind=FeedKind.summary if item.type == TransformedType.summary else (
+                    FeedKind.qa if item.type == TransformedType.qa else FeedKind.flashcard
+                ),
+                ref_id=item.id,  # type: ignore[arg-type]
+            )
+            session.add(feed)
+            session.commit()
+
+            mirror_texts.append({"text": f"[{item.type.value.upper()}]\n{content}"})
+    
+    return mirror_texts
 
 
