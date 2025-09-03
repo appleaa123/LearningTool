@@ -246,7 +246,6 @@ export const ChatMessagesView = React.memo(function ChatMessagesView({
   historicalActivities,
   chatHistory = [],
   chatHistoryLoading = false,
-  currentSessionId,
 }: ChatMessagesViewProps) {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
 

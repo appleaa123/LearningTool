@@ -26,8 +26,9 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   
-  // Get text content (assuming content.text for chunks)
-  const textContent = item.content?.text || item.content || 'No content available';
+  // Get text content (ensuring it's a string)
+  const rawContent = item.content?.text || (typeof item.content === 'string' ? item.content : 'No content available');
+  const textContent = typeof rawContent === 'string' ? rawContent : 'No content available';
   const isLongContent = textContent.length > 300;
   const displayText = isExpanded || !isLongContent 
     ? textContent 
@@ -49,7 +50,7 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
       {/* Text content */}
       <div className="prose prose-sm max-w-none">
         <p className="text-sm leading-relaxed whitespace-pre-wrap">
-          {displayText}
+          {String(displayText)}
         </p>
       </div>
       

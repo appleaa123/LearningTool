@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { AudioRecordingError } from "@/types/langgraph";
@@ -30,7 +30,7 @@ export function DocumentUploader({
   
   // Topic suggestion state
   const [topicSuggestions, setTopicSuggestions] = useState<TopicSuggestion[]>([]);
-  const [loadingTopics, setLoadingTopics] = useState(false);
+  const [loadingTopics] = useState(false);
   const [topicError, setTopicError] = useState<string | null>(null);
   const [showTopicSuggestions, setShowTopicSuggestions] = useState(false);
   
@@ -79,33 +79,6 @@ export function DocumentUploader({
       setIsUploading(false);
     }
   }
-
-  const pollForTopicSuggestions = useCallback(async () => {
-    setLoadingTopics(true);
-    setTopicError(null);
-    
-    try {
-      // Poll for topics with timeout
-      const topics = await topicService.pollForTopics(
-        userId,
-        notebookId,
-        8, // max attempts
-        2000 // 2 second intervals
-      );
-      
-      setTopicSuggestions(topics);
-      setShowTopicSuggestions(topics.length > 0);
-      
-      if (topics.length === 0) {
-        setTopicError("No topic suggestions were generated for this content.");
-      }
-    } catch (err) {
-      console.error("Failed to poll for topic suggestions:", err);
-      setTopicError("Failed to generate topic suggestions. The content may not contain enough information for meaningful research topics.");
-    } finally {
-      setLoadingTopics(false);
-    }
-  }, [userId, notebookId]);
 
   const handleAcceptTopic = useCallback(async (topicId: number) => {
     try {
